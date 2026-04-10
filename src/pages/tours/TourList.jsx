@@ -18,6 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const UPLOADS_URL = import.meta.env.VITE_UPLOADS_URL || API_URL;
 
 async function fetchTours() {
   const { data } = await axios.get(`${API_URL}/tours/all`);
@@ -74,7 +75,7 @@ export default function TourList() {
                     {tour.img ? (
                       <Box
                         component="img"
-                        src={tour.img.startsWith('/') ? `${API_URL}${tour.img}` : tour.img}
+                        src={tour.img.startsWith('/') ? `${UPLOADS_URL}${tour.img}` : tour.img}
                         alt={tour.adminTitle}
                         sx={{ width: 60, height: 40, objectFit: 'cover', borderRadius: 1 }}
                       />
