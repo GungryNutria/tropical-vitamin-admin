@@ -20,6 +20,16 @@ import axios from 'axios';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const UPLOADS_URL = import.meta.env.VITE_UPLOADS_URL || API_URL;
 
+// Helper to get proper image URL (handles both absolute and relative URLs)
+function getImageUrl(img) {
+  if (!img) return null;
+  // Already relative URL
+  if (img.startsWith('/')) return `${UPLOADS_URL}${img}`;
+  // Absolute URL - extract filename and proxy through API
+  const filename = img.split('/').pop();
+  return `${API_URL}/upload/${filename}`;
+}
+
 async function fetchTours() {
   const { data } = await axios.get(`${API_URL}/tours/all`);
   return data;
@@ -75,7 +85,7 @@ export default function TourList() {
                     {tour.img ? (
                       <Box
                         component="img"
-                        src={tour.img.startsWith('/') ? `${UPLOADS_URL}${tour.img}` : tour.img}
+                        src={getImageUrl(tour.img)}
                         alt={tour.adminTitle}
                         sx={{ width: 60, height: 40, objectFit: 'cover', borderRadius: 1 }}
                       />
