@@ -20,13 +20,12 @@ import axios from 'axios';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const UPLOADS_URL = import.meta.env.VITE_UPLOADS_URL || API_URL;
 
-// Helper to get proper image URL (handles both absolute and relative URLs)
+// Helper to get proper image URL - proxy through API for presigned URLs
 function getImageUrl(img) {
   if (!img) return null;
-  // Already relative URL
-  if (img.startsWith('/')) return `${UPLOADS_URL}${img}`;
-  // Absolute URL - extract filename and proxy through API
+  // Extract filename from any URL format
   const filename = img.split('/').pop();
+  // Use API proxy endpoint which generates presigned URLs
   return `${API_URL}/upload/${filename}`;
 }
 
