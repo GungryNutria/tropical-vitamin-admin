@@ -55,9 +55,12 @@ async function updateTour({ id, data }) {
   return result;
 }
 
-async function uploadImage(file) {
+async function uploadImage(file, name) {
   const formData = new FormData();
   formData.append('file', file);
+  if (name) {
+    formData.append('name', name);
+  }
   const { data } = await axios.post(`${API_URL}/upload`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
@@ -223,8 +226,10 @@ export default function TourEdit() {
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (file) {
+                    // Use adminTitle as filename, fallback to timestamp
+                    const customName = form.adminTitle || `tour-${Date.now()}`;
                     try {
-                      const result = await uploadImage(file);
+                      const result = await uploadImage(file, customName);
                       handleChange('img', result.url);
                     } catch (err) {
                       console.error('Error uploading image:', err);
