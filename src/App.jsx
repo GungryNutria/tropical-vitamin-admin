@@ -34,8 +34,9 @@ const darkTheme = createTheme({
 });
 
 function PrivateRoute({ children }) {
-  const { user } = useAuth();
-  return user ? children : <Navigate to="/login" />;
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return user ? children : <Navigate to="/login" replace />;
 }
 
 function App() {
