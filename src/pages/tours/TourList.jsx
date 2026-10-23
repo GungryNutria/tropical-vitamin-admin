@@ -15,7 +15,7 @@ import {
 } from '@mui/material';
 import { Edit as EditIcon, Add as AddIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../../lib/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const UPLOADS_URL = import.meta.env.VITE_UPLOADS_URL || API_URL;
@@ -30,7 +30,7 @@ function getImageUrl(img) {
 }
 
 async function fetchTours() {
-  const { data } = await axios.get(`${API_URL}/tours/all`);
+  const { data } = await api.get(`/tours/all`);
   return data;
 }
 
