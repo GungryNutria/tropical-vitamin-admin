@@ -66,8 +66,9 @@ function Preview({ img }) {
  * Foto del tour (REQ-15 a REQ-18). `value` es el `img` del formulario; la foto subida solo viaja
  * al API cuando el tour se guarda (REQ-18, D-5): aquí solo se sube el archivo, sin `name`, y se
  * devuelve la url con onChange. `savedValue` es la foto ya guardada, para saber si es nueva.
+ * `compact` (bajo 1200 px): la foto en miniatura 112x75 junto a "Cambiar foto" (E5.3 a 390).
  */
-export default function PhotoField({ value, savedValue, onChange, onUploadingChange }) {
+export default function PhotoField({ value, savedValue, onChange, onUploadingChange, compact = false }) {
   const inputRef = useRef(null);
   const controllerRef = useRef(null);
   const lastFileRef = useRef(null);
@@ -131,6 +132,7 @@ export default function PhotoField({ value, savedValue, onChange, onUploadingCha
   const pick = () => inputRef.current?.click();
 
   const isNew = !!value && value !== savedValue;
+  const fileLabel = isNew && meta ? `${meta.name} · ${formatFileSize(meta.size)}` : value?.split('/').pop();
   const input = (
     <input
       ref={inputRef}
@@ -159,7 +161,7 @@ export default function PhotoField({ value, savedValue, onChange, onUploadingCha
   };
 
   const zoneSx = (borderColor) => ({
-    aspectRatio: '3 / 2',
+    ...(compact ? { minHeight: 168, py: 2 } : { aspectRatio: '3 / 2' }),
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -186,21 +188,35 @@ export default function PhotoField({ value, savedValue, onChange, onUploadingCha
           sx={{ width: '100%', height: 6, borderRadius: 3, bgcolor: 'neutral.chip', '& .MuiLinearProgress-bar': { bgcolor: 'text.primary' } }}
         />
         <Typography variant="caption" color="text.secondary">Subiendo… {upload.progress} %</Typography>
-        <ButtonBase onClick={cancel} sx={link}>Cancelar</ButtonBase>
+        <ButtonBase onClick={cancel} sx={{ ...link, ...(compact && { minHeight: 44, minWidth: 44 }) }}>Cancelar</ButtonBase>
       </Box>
     );
   } else if (value) {
     body = (
       <>
-        <Preview img={value} />
-        <Button variant="outlined" onClick={pick} startIcon={<UploadOutlined />} sx={{ width: '100%', mt: 1.5 }}>
-          Cambiar foto
-        </Button>
-        <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
-          {isNew && meta ? `${meta.name} · ${formatFileSize(meta.size)}` : value.split('/').pop()}
-        </Typography>
+        {compact ? (
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+            <Box sx={{ width: 112, flexShrink: 0 }}><Preview img={value} /></Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Button variant="outlined" onClick={pick} startIcon={<UploadOutlined />} sx={{ width: '100%' }}>
+                Cambiar foto
+              </Button>
+              <Typography variant="caption" color="text.secondary" component="p" noWrap sx={{ mt: 1 }}>{fileLabel}</Typography>
+              <Typography variant="caption" color="text.secondary" component="p">{FORMATS}</Typography>
+              <Typography variant="caption" color="text.secondary" component="p">Hasta 10 MB</Typography>
+            </Box>
+          </Box>
+        ) : (
+          <>
+            <Preview img={value} />
+            <Button variant="outlined" onClick={pick} startIcon={<UploadOutlined />} sx={{ width: '100%', mt: 1.5 }}>
+              Cambiar foto
+            </Button>
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>{fileLabel}</Typography>
+          </>
+        )}
         {isNew && (
-          <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: compact ? 1 : 0.5 }}>
             Foto nueva. La web la mostrará cuando guardes.
           </Typography>
         )}

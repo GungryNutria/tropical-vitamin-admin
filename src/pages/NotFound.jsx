@@ -6,6 +6,7 @@ export default function NotFound() {
   return (
     <NotFoundState
       title="Esta página no existe."
+      description="Puede que el enlace esté incompleto o que la página se haya movido."
       action={{ label: 'Ir al inicio', onClick: () => navigate('/') }}
     />
   );

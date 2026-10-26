@@ -8,17 +8,18 @@ const kinds = {
 };
 
 // Aviso dentro de la vista. children = detalle o lista de enlaces; action = { label, onClick }.
-export default function Banner({ severity = 'error', title, children, action }) {
+// Sin title, children es el mensaje único (E1.3, E1.5). El texto ocupa todo el ancho disponible.
+export default function Banner({ severity = 'error', title, children, action, sx }) {
   const { icon: Icon, color, bg, role } = kinds[severity];
   return (
     <Box
       role={role}
-      sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, p: 2, bgcolor: bg, border: '1px solid', borderColor: color, borderRadius: '6px' }}
+      sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, p: 2, bgcolor: bg, border: '1px solid', borderColor: color, borderRadius: '6px', ...sx }}
     >
       <Icon sx={{ color, fontSize: 20, mt: '2px' }} aria-hidden />
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="h2" component="p" sx={{ fontSize: 15 }}>{title}</Typography>
-        {children && <Typography variant="body2" component="div">{children}</Typography>}
+        {title && <Typography variant="h2" component="p" sx={{ fontSize: 15 }}>{title}</Typography>}
+        {children && <Typography variant={title ? 'body2' : 'body1'} component="div">{children}</Typography>}
       </Box>
       {action && (
         <Button variant="outlined" onClick={action.onClick} sx={{ flexShrink: 0 }}>

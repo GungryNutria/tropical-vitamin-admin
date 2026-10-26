@@ -38,11 +38,8 @@ export function AuthProvider({ children }) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        return { 
-          success: false, 
-          error: errorData.message || 'Credenciales inválidas' 
-        };
+        // 401/400: credenciales; cualquier otro estado: el servidor falló.
+        return { success: false, kind: response.status === 401 || response.status === 400 ? 'credentials' : 'server' };
       }
 
       const data = await response.json();
@@ -55,17 +52,15 @@ export function AuthProvider({ children }) {
       return { success: true };
     } catch (error) {
       console.error('Login error:', error);
-      return { 
-        success: false, 
-        error: 'Error de conexión. Intenta de nuevo.' 
-      };
+      return { success: false, kind: 'network' };
     }
   };
 
+  // 'logout': salida deliberada; el login no muestra aviso ni vuelve a la ruta anterior.
   const logout = () => {
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminUser');
-    setReason(null);
+    setReason('logout');
     setUser(null);
   };
 

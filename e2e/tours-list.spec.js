@@ -135,11 +135,11 @@ test.describe('V4 Lista de tours (T-7)', () => {
   test('AC-6 y AC-18: los filtros que llegan por URL (foto, textos, 1, inactivos) cuentan lo mismo que los indicadores', async ({ page }) => {
     await open(page, '/tours?pendientes=foto');
     await expect(counter(page)).toHaveText('1 de 39 tours');
-    await expect(page.getByRole('button', { name: 'Quitar filtro Sin foto' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Con pendientes', exact: true })).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByRole('button', { name: 'Quitar filtro Pendientes: sin foto' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Con pendientes', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.goto('/tours?pendientes=textos');
     await expect(counter(page)).toHaveText('2 de 39 tours');
-    await expect(page.getByRole('button', { name: 'Quitar filtro Textos pendientes' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Quitar filtro Pendientes: textos' })).toBeVisible();
     await page.goto('/tours?pendientes=1');
     await expect(counter(page)).toHaveText('3 de 39 tours');
     await expect(page.getByText('EN falta')).toHaveCount(2);
@@ -320,5 +320,36 @@ test.describe('V4 Lista de tours (T-7)', () => {
       await expect(page.getByText('No pudimos cargar los tours.')).toBeVisible({ timeout: 10000 });
       expect(await blocking(page)).toEqual([]);
     });
+  });
+
+  test('E4.3b y E4.3c: desde Inicio, "Con pendientes" se ve encendido con el subfiltro como chip; quitar el chip deja el modo general y apagar el botón quita todo', async ({ page }) => {
+    await open(page, '/tours?pendientes=foto');
+    const toggle = page.getByRole('button', { name: 'Con pendientes', exact: true });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(counter(page)).toHaveText('1 de 39 tours');
+    await page.getByRole('button', { name: 'Quitar filtro Pendientes: sin foto' }).click();
+    await expect(page).toHaveURL('/tours?pendientes=1');
+    await expect(counter(page)).toHaveText('3 de 39 tours');
+    await expect(page.getByRole('button', { name: 'Quitar filtro Con pendientes' })).toBeVisible();
+    await page.goto('/tours?pendientes=textos');
+    await toggle.click();
+    await expect(page).toHaveURL('/tours');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('E4.2b: el título largo se recorta en una línea y el texto completo sale en un tooltip también con el foco del teclado', async ({ page }) => {
+    await open(page);
+    const link = row(page, 'aventura-completa').getByRole('link', { name: LONG_TITLE });
+    const { clipped, lines } = await link.evaluate((el) => ({
+      clipped: el.scrollWidth > el.clientWidth,
+      lines: Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)),
+    }));
+    expect(clipped).toBe(true);
+    expect(lines).toBe(1);
+    await link.focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await expect(link).toBeFocused();
+    await expect(page.getByRole('tooltip')).toHaveText(LONG_TITLE);
   });
 });

@@ -10,6 +10,7 @@ import api, { errorMessage } from '../../lib/api';
 import { formatDuration } from '../../lib/format';
 import { activeLanguages } from '../../lib/catalog';
 import { useToasts } from '../../lib/useToasts';
+import { useIsStacked } from '../../lib/useIsMobile';
 import useUnsavedGuard from '../../lib/useUnsavedGuard';
 import Banner from '../../components/Banner';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -71,7 +72,7 @@ function validate(form, languages) {
 
 function Crumbs({ current }) {
   return (
-    <Box component="nav" aria-label="Ruta" sx={{ display: 'flex', gap: 1.5, fontSize: 13, lineHeight: '18px', color: 'text.secondary' }}>
+    <Box component="nav" aria-label="Ruta" sx={{ display: { xs: 'none', md: 'flex' }, gap: 1.5, fontSize: 13, lineHeight: '18px', color: 'text.secondary' }}>
       <Link component={RouterLink} to="/tours" underline="hover" color="inherit">Tours</Link>
       {current && (
         <>
@@ -83,10 +84,12 @@ function Crumbs({ current }) {
   );
 }
 
-const card = { p: 3, bgcolor: 'background.paper', border: '1px solid', borderColor: 'border.subtle', borderRadius: '8px' };
+const card = { p: { xs: 2, md: 3 }, bgcolor: 'background.paper', border: '1px solid', borderColor: 'border.subtle', borderRadius: '8px' };
+// En una columna el orden es: aviso, foto, "Visible en la web", datos, textos (E5.3 a 390); en dos, el del DOM.
+const bannerOrder = { order: { xs: 1, lg: 0 } };
 const gridSx = {
   display: 'grid',
-  gap: '24px 48px',
+  gap: { xs: '16px', lg: '24px 48px' },
   alignItems: 'start',
   gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 720px) 320px' },
 };
@@ -134,6 +137,7 @@ function TourForm({ tour, categories, languages, savedFlag }) {
   const location = useLocation();
   const queryClient = useQueryClient();
   const toasts = useToasts();
+  const stacked = useIsStacked(); // bajo 1200 px el riel se apila y Guardar pasa a la barra inferior fija
 
   const esId = languages.find((l) => l.code === 'es')?.id;
   const categoryLabel = (c) => c.translations?.find((t) => t.languageId === esId)?.name || c.adminName;
@@ -147,6 +151,10 @@ function TourForm({ tour, categories, languages, savedFlag }) {
   const [uploading, setUploading] = useState(false);
   const [focusRequest, setFocusRequest] = useState(null);
   const [createdId, setCreatedId] = useState(null);
+
+  const title = (esId && baseline.translations[esId]?.title.trim()) || baseline.adminTitle.trim() || 'Nuevo tour';
+  const handleSaveRef = useRef(null);
+  const errorToastRef = useRef(null);
 
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
   const blocker = useUnsavedGuard(dirty);
@@ -164,6 +172,13 @@ function TourForm({ tour, categories, languages, savedFlag }) {
   useEffect(() => {
     if (createdId && !dirty) navigate(`/tours/${createdId}`, { replace: true, state: { saved: true } });
   }, [createdId, dirty, navigate]);
+
+  // Los avisos suben sobre la barra inferior (88 px + 8 de aire).
+  useEffect(() => {
+    if (!stacked) return undefined;
+    document.documentElement.style.setProperty('--toast-bottom', '96px');
+    return () => document.documentElement.style.removeProperty('--toast-bottom');
+  }, [stacked]);
 
   useEffect(() => {
     if (focusRequest) document.getElementById(focusRequest.id)?.focus();
@@ -196,11 +211,21 @@ function TourForm({ tour, categories, languages, savedFlag }) {
       if (isNew) setCreatedId(data?.id);
       else toasts.success('Cambios guardados');
     },
-    onError: (err) => setSaveError(errorMessage(err)),
+    onError: (err) => {
+      setSaveError(errorMessage(err));
+      // Bajo 1200 px el banner puede quedar fuera de la vista: el error y Reintentar también van en un aviso fijo.
+      if (stacked) {
+        errorToastRef.current = toasts.error(`No pudimos guardar «${title}».`, {
+          action: { label: 'Reintentar', onClick: () => handleSaveRef.current?.() },
+        });
+      }
+    },
   });
 
   const handleSave = () => {
     if (save.isPending || uploading) return;
+    if (errorToastRef.current) toasts.close(errorToastRef.current);
+    errorToastRef.current = null;
     setSubmitted(true);
     setSaveError(null);
     if (errors.length) {
@@ -228,8 +253,11 @@ function TourForm({ tour, categories, languages, savedFlag }) {
     });
   };
 
-  const title = (esId && baseline.translations[esId]?.title.trim()) || baseline.adminTitle.trim() || 'Nuevo tour';
   const minutes = durationMinutes(form.duration);
+
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  });
 
   let railNote = null;
   if (uploading) railNote = <Typography variant="caption" color="text.secondary">Esperando la foto</Typography>;
@@ -249,9 +277,35 @@ function TourForm({ tour, categories, languages, savedFlag }) {
     );
   }
 
+  const saveButton = (
+    <Button
+      type="submit"
+      variant="contained"
+      fullWidth
+      disabled={uploading}
+      aria-busy={save.isPending || undefined}
+      aria-describedby="save-note"
+      sx={{ minHeight: 44 }}
+    >
+      {save.isPending ? (
+        <>
+          <CircularProgress size={18} thickness={5} color="inherit" sx={{ mr: 1 }} aria-hidden />
+          Guardando…
+        </>
+      ) : (
+        'Guardar'
+      )}
+    </Button>
+  );
+  const saveNote = (
+    <Box id="save-note" sx={{ display: 'flex', justifyContent: 'center', minHeight: 18 }} role="status">
+      {railNote || (stacked && <Typography variant="caption" color="text.secondary">Sin cambios</Typography>)}
+    </Box>
+  );
+
   return (
-    <Box component="form" noValidate onSubmit={(e) => { e.preventDefault(); handleSave(); }} sx={gridSx}>
-      <Box sx={{ gridColumn: { lg: 1 }, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2 }}>
+    <Box component="form" noValidate onSubmit={(e) => { e.preventDefault(); handleSave(); }} sx={{ ...gridSx, ...(stacked && { pb: '96px' }) }}>
+      <Box sx={{ gridColumn: { lg: 1 }, display: 'flex', flexDirection: { xs: 'column-reverse', md: 'row' }, justifyContent: 'space-between', alignItems: 'flex-start', gap: { xs: 0.5, md: 2 } }}>
         <Box sx={{ minWidth: 0 }}>
           <Crumbs current={title} />
           <Typography variant="h1" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>{title}</Typography>
@@ -260,16 +314,16 @@ function TourForm({ tour, categories, languages, savedFlag }) {
           component={RouterLink}
           to="/tours"
           underline="always"
-          sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'primary.main', fontSize: 14, fontWeight: 600, flexShrink: 0, mt: 0.5 }}
+          sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'primary.main', fontSize: 14, fontWeight: 600, flexShrink: 0, mt: { md: 0.5 }, minHeight: { xs: 44, md: 0 } }}
         >
           <ArrowBack sx={{ fontSize: 18 }} aria-hidden />
           Volver a la lista
         </Link>
       </Box>
 
-      <Box sx={{ gridColumn: { lg: 1 }, display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+      <Box sx={{ gridColumn: { lg: 1 }, display: { xs: 'contents', lg: 'flex' }, flexDirection: 'column', gap: 3, minWidth: 0 }}>
         {shown.length > 0 ? (
-          <Banner severity="error" title={`Revisa ${plural(shown.length, 'campo', 'campos')}`}>
+          <Banner severity="error" sx={bannerOrder} title={`Revisa ${plural(shown.length, 'campo', 'campos')}`}>
             <span>Corrige lo marcado para guardar. No se guardó nada todavía.</span>
             <Box component="ul" sx={{ listStyle: 'none', m: 0, mt: 0.5, p: 0 }}>
               {shown.map((e) => (
@@ -286,10 +340,10 @@ function TourForm({ tour, categories, languages, savedFlag }) {
             </Box>
           </Banner>
         ) : (
-          saveError && <Banner severity="error" title="No se pudo guardar el tour" action={{ label: 'Reintentar', onClick: handleSave }}>{saveError}</Banner>
+          saveError && <Banner severity="error" sx={bannerOrder} title="No se pudo guardar el tour" action={{ label: 'Reintentar', onClick: handleSave }}>{saveError}</Banner>
         )}
 
-        <Box component="section" aria-labelledby="general-title" sx={card}>
+        <Box component="section" aria-labelledby="general-title" sx={{ ...card, order: { xs: 4, lg: 0 } }}>
           <Typography id="general-title" variant="h2" component="h2" sx={{ mb: 2 }}>Datos generales</Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
             <FormField
@@ -358,7 +412,7 @@ function TourForm({ tour, categories, languages, savedFlag }) {
           </Box>
         </Box>
 
-        <Box component="section" aria-labelledby="texts-title" sx={{ ...card, pb: 4 }}>
+        <Box component="section" aria-labelledby="texts-title" sx={{ ...card, pb: 4, order: { xs: 5, lg: 0 } }}>
           <Typography id="texts-title" variant="h2" component="h2" sx={{ mb: 2 }}>Textos por idioma</Typography>
           <Tabs value={activeLang} onChange={(_, v) => setActiveLang(v)} aria-label="Idiomas" sx={{ borderBottom: '1px solid', borderColor: 'border.subtle', mb: 3 }}>
             {languages.map((l) => {
@@ -423,14 +477,14 @@ function TourForm({ tour, categories, languages, savedFlag }) {
       <Box
         component="aside"
         aria-label="Foto, visibilidad y guardado"
-        sx={{ gridColumn: { lg: 2 }, gridRow: { lg: '2 / span 2' }, position: { lg: 'sticky' }, top: 32, display: 'flex', flexDirection: 'column', gap: 2 }}
+        sx={{ gridColumn: { lg: 2 }, gridRow: { lg: '2 / span 2' }, position: { lg: 'sticky' }, top: 32, display: { xs: 'contents', lg: 'flex' }, flexDirection: 'column', gap: 2 }}
       >
-        <Box component="section" aria-labelledby="photo-title" sx={{ ...card, p: '15px' }}>
+        <Box component="section" aria-labelledby="photo-title" sx={{ ...card, p: '15px', order: { xs: 2, lg: 0 } }}>
           <Typography id="photo-title" variant="h2" component="h2" sx={{ mb: 1.5 }}>Foto</Typography>
-          <PhotoField value={form.img} savedValue={baseline.img} onChange={(url) => setField('img', url)} onUploadingChange={setUploading} />
+          <PhotoField compact={stacked} value={form.img} savedValue={baseline.img} onChange={(url) => setField('img', url)} onUploadingChange={setUploading} />
         </Box>
 
-        <Box component="label" htmlFor="tour-isActive" sx={{ ...card, p: '15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, cursor: 'pointer' }}>
+        <Box component="label" htmlFor="tour-isActive" sx={{ ...card, p: '15px', order: { xs: 3, lg: 0 }, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, cursor: 'pointer' }}>
           <Box>
             <Typography id="active-title" variant="subtitle2" component="span" sx={{ display: 'block', color: 'text.primary', fontSize: 15, fontWeight: 600 }}>Visible en la web</Typography>
             <Typography id="active-help" variant="caption" color="text.secondary" component="span" sx={{ display: 'block' }}>
@@ -444,28 +498,37 @@ function TourForm({ tour, categories, languages, savedFlag }) {
           />
         </Box>
 
-        <Button
-          type="submit"
-          variant="contained"
-          fullWidth
-          disabled={uploading}
-          aria-busy={save.isPending || undefined}
-          aria-describedby="save-note"
-          sx={{ minHeight: 44 }}
-        >
-          {save.isPending ? (
-            <>
-              <CircularProgress size={18} thickness={5} color="inherit" sx={{ mr: 1 }} aria-hidden />
-              Guardando…
-            </>
-          ) : (
-            'Guardar'
-          )}
-        </Button>
-        <Box id="save-note" sx={{ display: 'flex', justifyContent: 'center', minHeight: 18 }} role="status">
-          {railNote}
-        </Box>
+        {!stacked && (
+          <>
+            {saveButton}
+            {saveNote}
+          </>
+        )}
       </Box>
+
+      {stacked && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 0,
+            left: { xs: 0, md: 232 },
+            right: 0,
+            height: 88,
+            zIndex: (t) => t.zIndex.appBar,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: '6px',
+            px: 2,
+            bgcolor: 'bg.surface',
+            borderTop: '1px solid',
+            borderColor: 'border.subtle',
+          }}
+        >
+          {saveNote}
+          {saveButton}
+        </Box>
+      )}
 
       <ConfirmDialog
         open={blocker.state === 'blocked'}

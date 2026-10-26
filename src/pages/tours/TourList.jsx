@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   Box,
   Button,
   Chip,
+  Drawer,
+  IconButton,
   InputAdornment,
   Link,
   MenuItem,
@@ -17,6 +20,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import Check from '@mui/icons-material/Check';
@@ -28,7 +32,9 @@ import api from '../../lib/api';
 import { formatDuration, formatPrice } from '../../lib/format';
 import { hasNoPhoto, hasPendingTexts, tourLanguageStatus } from '../../lib/catalog';
 import { useToasts } from '../../lib/useToasts';
+import { useIsMobile } from '../../lib/useIsMobile';
 import { numeric } from '../../theme';
+import FormField from '../../components/FormField';
 import LangChips from '../../components/LangChips';
 import TourThumb from '../../components/TourThumb';
 import { EmptyState, ErrorState } from '../../components/States';
@@ -40,13 +46,13 @@ const fetchLanguages = async () => (await api.get('/languages')).data;
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 const STATES = { activos: 'Activos', inactivos: 'Inactivos' };
-const PENDING_CHIPS = { 1: 'Con pendientes', foto: 'Sin foto', textos: 'Textos pendientes' };
+const PENDING_CHIPS = { 1: 'Con pendientes', foto: 'Pendientes: sin foto', textos: 'Pendientes: textos' };
 
 // Anchos de columna (handoff R1 sección 3, tabla de 1144): foto, tour, categoría, duración, precio, idiomas, activo.
 const COLS = [92, null, 168, 80, 120, 252, 72];
 const cell = { p: 0, height: 52, borderBottom: '1px solid', borderColor: 'border.subtle', verticalAlign: 'middle' };
 const headCell = { p: 0, height: 40, fontSize: 13, fontWeight: 600, color: 'text.secondary', borderBottom: '1px solid', borderColor: 'border.subtle' };
-const srOnly = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
+const srOnly = { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
 
 function ToursTable({ busy, children }) {
   return (
@@ -118,28 +124,29 @@ function TourRow({ row, onToggle }) {
       </TableCell>
       <TableCell sx={{ ...cell, pr: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-          <Link
-            component={RouterLink}
-            to={`/tours/${tour.id}`}
-            title={title}
-            underline="none"
-            color="text.primary"
-            sx={{
-              fontSize: 14,
-              lineHeight: '20px',
-              fontWeight: 600,
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              // Toda la fila es el área clicable: el enlace se estira sobre ella.
-              '&::after': { content: '""', position: 'absolute', inset: 0 },
-              '&:focus-visible': { outline: 'none' },
-              '&:focus-visible::after': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
-            }}
-          >
-            {title}
-          </Link>
+          <Tooltip title={title} describeChild placement="top-start">
+            <Link
+              component={RouterLink}
+              to={`/tours/${tour.id}`}
+              underline="none"
+              color="text.primary"
+              sx={{
+                fontSize: 14,
+                lineHeight: '20px',
+                fontWeight: 600,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                // Toda la fila es el área clicable: el enlace se estira sobre ella.
+                '&::after': { content: '""', position: 'absolute', inset: 0 },
+                '&:focus-visible': { outline: 'none' },
+                '&:focus-visible::after': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
+              }}
+            >
+              {title}
+            </Link>
+          </Tooltip>
           {hasNoPhoto(tour) && (
             <Chip
               size="small"
@@ -172,11 +179,149 @@ function TourRow({ row, onToggle }) {
   );
 }
 
+const clamp1 = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+
+function SkeletonList() {
+  return (
+    <Box component="ul" aria-busy="true" aria-label="Cargando los tours" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+      {Array.from({ length: 8 }, (_, i) => (
+        <Box component="li" key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 76, borderBottom: '1px solid', borderColor: 'border.subtle' }}>
+          <Skeleton variant="rounded" width={56} height={40} />
+          <Box sx={{ flex: 1 }}>
+            <Skeleton variant="rounded" width={150} height={10} sx={{ mb: 1 }} />
+            <Skeleton variant="rounded" width={90} height={8} />
+          </Box>
+          <Skeleton variant="rounded" width={40} height={24} sx={{ borderRadius: 999 }} />
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+// Fila compacta de 390 (E4.2): foto 56x40, título, categoría y solo lo que falta ("EN falta", "Sin foto").
+function MobileRow({ row, onToggle }) {
+  const { tour, title, categoryName, languagesStatus } = row;
+  const missing = languagesStatus.filter((s) => !s.complete);
+  return (
+    <Box
+      component="li"
+      sx={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 76, py: 1, borderBottom: '1px solid', borderColor: 'border.subtle' }}
+    >
+      <TourThumb img={tour.img} width={56} height={40} />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Link
+          component={RouterLink}
+          to={`/tours/${tour.id}`}
+          underline="none"
+          color="text.primary"
+          sx={{
+            display: 'block',
+            fontSize: 16,
+            lineHeight: '24px',
+            fontWeight: 600,
+            ...clamp1,
+            '&::after': { content: '""', position: 'absolute', inset: 0 },
+            '&:focus-visible': { outline: 'none' },
+            '&:focus-visible::after': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px' },
+          }}
+        >
+          {title}
+        </Link>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Typography variant="body2" color="text.secondary" noWrap sx={{ minWidth: 0, maxWidth: '100%' }}>{categoryName}</Typography>
+          {missing.map(({ language }) => (
+            <Chip key={language.id} size="small" label={`${language.code.toUpperCase()} falta`} sx={{ bgcolor: 'statusBg.warning', color: 'warning.main' }} />
+          ))}
+          {hasNoPhoto(tour) && (
+            <Chip
+              size="small"
+              icon={<ImageOutlined />}
+              label="Sin foto"
+              sx={{ bgcolor: 'statusBg.warning', color: 'warning.main', '& .MuiChip-icon': { color: 'warning.main' } }}
+            />
+          )}
+        </Box>
+      </Box>
+      {/* La etiqueta es el área táctil: 48x44, por encima del enlace estirado. */}
+      <Box component="label" sx={{ position: 'relative', zIndex: 1, display: 'grid', placeItems: 'center', width: 48, height: 44, overflow: 'hidden', cursor: 'pointer' }}>
+        <Switch
+          checked={!!tour.isActive}
+          onChange={(e) => onToggle(tour, title, e.target.checked)}
+          slotProps={{ input: { role: 'switch', 'aria-label': `Mostrar «${title}» en la web` } }}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+// Hoja inferior de filtros (E4.3): se aplican al instante; "Ver N tours" solo la cierra.
+function FiltersSheet({ open, onClose, categories, categoriaId, estado, pendientes, update, onClear, count }) {
+  return (
+    <Drawer
+      anchor="bottom"
+      open={open}
+      onClose={onClose}
+      slotProps={{ paper: { sx: { bgcolor: 'bg.surface', backgroundImage: 'none', borderRadius: '12px 12px 0 0', px: 2, pb: 2, maxHeight: '90vh' }, 'aria-label': 'Filtros' } }}
+    >
+      <Box aria-hidden sx={{ width: 36, height: 4, borderRadius: 2, bgcolor: 'border.control', mx: 'auto', mt: 1.25, mb: 0.5 }} />
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+        <Typography variant="h3" component="h2">Filtros</Typography>
+        <IconButton aria-label="Cerrar filtros" edge="end" onClick={onClose}><Close /></IconButton>
+      </Box>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        <FormField
+          id="filtro-categoria"
+          label="Categoría"
+          select
+          value={categoriaId}
+          onChange={(e) => update({ categoria: e.target.value })}
+          slotProps={{ select: { displayEmpty: true, IconComponent: KeyboardArrowDown, SelectDisplayProps: { id: 'filtro-categoria' }, renderValue: (v) => (v ? categories.find((c) => String(c.id) === v)?.label : 'Todas las categorías') } }}
+        >
+          <MenuItem value="">Todas las categorías</MenuItem>
+          {categories.map((c) => (
+            <MenuItem key={c.id} value={String(c.id)}>{c.label}</MenuItem>
+          ))}
+        </FormField>
+        <FormField
+          id="filtro-estado"
+          label="Estado"
+          select
+          value={estado}
+          onChange={(e) => update({ estado: e.target.value })}
+          slotProps={{ select: { displayEmpty: true, IconComponent: KeyboardArrowDown, SelectDisplayProps: { id: 'filtro-estado' }, renderValue: (v) => STATES[v] || 'Todos' } }}
+        >
+          <MenuItem value="">Todos</MenuItem>
+          <MenuItem value="activos">Activos</MenuItem>
+          <MenuItem value="inactivos">Inactivos</MenuItem>
+        </FormField>
+        <Box
+          component="label"
+          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56, px: 2, bgcolor: 'bg.base', border: '1px solid', borderColor: 'border.subtle', borderRadius: '8px', cursor: 'pointer' }}
+        >
+          <Typography component="span" variant="subtitle2" sx={{ color: 'text.primary', fontSize: 15 }}>Con pendientes</Typography>
+          <Switch
+            checked={pendientes !== ''}
+            onChange={(e) => update({ pendientes: e.target.checked ? '1' : '' })}
+            slotProps={{ input: { role: 'switch' } }}
+          />
+        </Box>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1.5, mt: 3 }}>
+        <Button variant="outlined" onClick={onClear} sx={{ flex: 1 }}>Quitar filtros</Button>
+        <Button variant="contained" onClick={onClose} sx={{ flex: 1.2 }}>Ver {count} {count === 1 ? 'tour' : 'tours'}</Button>
+      </Box>
+    </Drawer>
+  );
+}
+
 export default function TourList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toasts = useToasts();
   const [params, setParams] = useSearchParams();
+  const mobile = useIsMobile();
+  const { topbarSlot } = useOutletContext();
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const toursQ = useQuery({ queryKey: ['tours'], queryFn: fetchTours });
   const categoriesQ = useQuery({ queryKey: ['categories'], queryFn: fetchCategories });
@@ -192,15 +337,12 @@ export default function TourList() {
   if (draft !== null && draft === urlQ) setDraft(null);
   const q = draft ?? urlQ;
 
-  const update = (changes) =>
-    setParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        Object.entries(changes).forEach(([k, v]) => (v ? next.set(k, v) : next.delete(k)));
-        return next;
-      },
-      { replace: true },
-    );
+  // Se parte de la URL actual (no del render): dos cambios seguidos no se pisan.
+  const update = (changes) => {
+    const next = new URLSearchParams(window.location.search);
+    Object.entries(changes).forEach(([k, v]) => (v ? next.set(k, v) : next.delete(k)));
+    setParams(next, { replace: true });
+  };
 
   const categories = useMemo(() => categoriesQ.data || [], [categoriesQ.data]);
   const languages = useMemo(() => languagesQ.data || [], [languagesQ.data]);
@@ -239,27 +381,35 @@ export default function TourList() {
     });
   }, [rows, search, categoriaId, estado, pendientes, languages]);
 
+  // Chips quitables. En 390 la búsqueda ya se ve en su campo, así que no lleva chip; "Con pendientes" encendido con un
+  // subfiltro (foto/textos) se muestra como ese subfiltro, y quitarlo deja "Con pendientes" en modo general.
+  const categoryLabel = (id) =>
+    rows.find((r) => String(r.tour.category?.id ?? r.tour.categoryId) === id)?.categoryName ||
+    categories.find((c) => String(c.id) === id)?.adminName;
   const chips = [];
-  if (search) chips.push({ key: 'q', label: `Búsqueda: ${search}` });
+  if (search && !mobile) chips.push({ key: 'q', label: `Búsqueda: ${search}`, remove: () => changeSearch('') });
   if (categoriaId) {
-    const name = rows.find((r) => String(r.tour.category?.id ?? r.tour.categoryId) === categoriaId)?.categoryName
-      || categories.find((c) => String(c.id) === categoriaId)?.adminName;
-    chips.push({ key: 'categoria', label: `Categoría: ${name}` });
+    const name = categoryLabel(categoriaId);
+    chips.push({ key: 'categoria', label: mobile ? name : `Categoría: ${name}`, remove: () => update({ categoria: '' }) });
   }
-  if (estado) chips.push({ key: 'estado', label: `Estado: ${STATES[estado]}` });
-  if (pendientes) chips.push({ key: 'pendientes', label: PENDING_CHIPS[pendientes] });
+  if (estado) chips.push({ key: 'estado', label: `Estado: ${STATES[estado]}`, remove: () => update({ estado: '' }) });
+  if (pendientes) {
+    chips.push({ key: 'pendientes', label: PENDING_CHIPS[pendientes], remove: () => update({ pendientes: pendientes === '1' ? '' : '1' }) });
+  }
+  const filterCount = [categoriaId, estado, pendientes].filter(Boolean).length;
 
   function changeSearch(value) {
     setDraft(value);
     update({ q: value });
   }
 
-  const removeChip = (key) => (key === 'q' ? changeSearch('') : update({ [key]: '' }));
-
   const clearFilters = () => {
     setDraft(null);
     setParams({}, { replace: true });
   };
+
+  // Hoja y fila de chips de 390: quitan los filtros, no la búsqueda.
+  const clearOnlyFilters = () => update({ categoria: '', estado: '', pendientes: '' });
 
   // Interruptor: guarda en el acto (optimista); si falla, vuelve y ofrece Reintentar; si sale bien, avisa con Deshacer (5 s).
   const patchCache = (id, isActive) =>
@@ -285,16 +435,25 @@ export default function TourList() {
 
   const retry = () => queries.filter((x) => x.isError).forEach((x) => x.refetch());
   const empty = ready && rows.length === 0;
-  const filtering = chips.length > 0;
+  const filtering = !!search || filterCount > 0;
   const total = rows.length;
   const controlsDisabled = !ready;
+  const countText = ready ? (filtering ? `${visible.length} de ${total} tours` : `${total} ${total === 1 ? 'tour' : 'tours'}`) : null;
+
+  // 390: el primario "Nuevo" va en la barra superior (portal), no en el encabezado de la vista.
+  let newButton = null;
+  if (!empty) {
+    newButton = mobile ? (
+      topbarSlot && createPortal(<Button component={RouterLink} to="/tours/new" variant="contained">Nuevo</Button>, topbarSlot)
+    ) : (
+      <Button component={RouterLink} to="/tours/new" variant="contained">Nuevo tour</Button>
+    );
+  }
 
   const header = (
-    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-      <Typography variant="h1" component="h1">Tours</Typography>
-      {!empty && (
-        <Button component={RouterLink} to="/tours/new" variant="contained">Nuevo tour</Button>
-      )}
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: mobile ? 0 : 3 }}>
+      <Typography variant="h1" component="h1" sx={mobile ? srOnly : undefined}>Tours</Typography>
+      {newButton}
     </Box>
   );
 
@@ -311,28 +470,131 @@ export default function TourList() {
     );
   }
 
+  const searchField = (
+    <TextField
+      value={q}
+      onChange={(e) => changeSearch(e.target.value)}
+      disabled={controlsDisabled}
+      placeholder="Buscar por título o nombre admin"
+      sx={{ width: mobile ? '100%' : 360, '& .MuiOutlinedInput-input': { pl: 0 } }}
+      slotProps={{
+        htmlInput: { 'aria-label': 'Buscar por título o nombre admin' },
+        input: {
+          startAdornment: (
+            <InputAdornment position="start">
+              <Search sx={{ color: 'tertiary' }} aria-hidden />
+            </InputAdornment>
+          ),
+        },
+      }}
+    />
+  );
+
+  const counter = (
+    <Box role="status" aria-live="polite" sx={{ ...(!mobile && { ml: 'auto' }), ...numeric, fontSize: 14, color: 'text.secondary' }}>
+      {loading ? <Skeleton variant="rounded" width={76} height={16} /> : countText}
+    </Box>
+  );
+
+  const chipRow = ready && chips.length > 0 && (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: mobile ? 1 : 2 }}>
+      {chips.map((c) => (
+        <Chip
+          key={c.key}
+          variant="outlined"
+          label={c.label}
+          onClick={c.remove}
+          onDelete={c.remove}
+          deleteIcon={<Close />}
+          aria-label={`Quitar filtro ${c.label}`}
+          sx={{
+            height: mobile ? 36 : 28,
+            borderColor: 'border.control',
+            fontWeight: mobile ? 600 : 400,
+            maxWidth: mobile ? '100%' : 320,
+            // 390: la X mide 44x44 (se sale del chip sin agrandarlo).
+            ...(mobile && { '& .MuiChip-deleteIcon': { boxSizing: 'content-box', width: 24, height: 24, p: '10px', m: '-4px -12px -4px -6px' } }),
+          }}
+        />
+      ))}
+      <Link
+        component="button"
+        type="button"
+        underline="always"
+        color="primary.main"
+        onClick={mobile ? clearOnlyFilters : clearFilters}
+        sx={{ fontSize: 14, fontWeight: 600, ...(mobile && { minHeight: 44, px: 1 }) }}
+      >
+        Quitar filtros
+      </Link>
+    </Box>
+  );
+
+  const states = (
+    <>
+      {loading && (mobile ? <SkeletonList /> : <SkeletonTable />)}
+      {failed && (
+        <ErrorState title="No pudimos cargar los tours." description="Revisa tu conexión e intenta de nuevo." onRetry={retry} />
+      )}
+      {ready && visible.length === 0 && (
+        <EmptyState
+          icon={<Search sx={{ color: 'tertiary', fontSize: 32 }} aria-hidden />}
+          title={search ? `Ningún tour coincide con «${search}».` : 'Ningún tour coincide con los filtros.'}
+          description={search ? 'Revisa la ortografía o prueba con menos palabras.' : 'Prueba con otros filtros o quítalos todos.'}
+          action={{ label: 'Quitar filtros', onClick: clearFilters, variant: 'outlined' }}
+        />
+      )}
+      {ready && visible.length > 0 && mobile && (
+        <Box component="ul" aria-label="Tours" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+          {visible.map((row) => (
+            <MobileRow key={row.tour.id} row={row} onToggle={setActive} />
+          ))}
+        </Box>
+      )}
+      {ready && visible.length > 0 && !mobile && (
+        <ToursTable>
+          {visible.map((row) => (
+            <TourRow key={row.tour.id} row={row} onToggle={setActive} />
+          ))}
+        </ToursTable>
+      )}
+    </>
+  );
+
+  if (mobile) {
+    return (
+      <Box>
+        {header}
+        <Box sx={{ mb: 1.5 }}>{searchField}</Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+          <Button variant="outlined" disabled={controlsDisabled} onClick={() => setSheetOpen(true)} sx={{ minWidth: 112 }}>
+            {filterCount > 0 ? `Filtros (${filterCount})` : 'Filtros'}
+          </Button>
+          {counter}
+        </Box>
+        {chipRow}
+        {states}
+        <FiltersSheet
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          categories={categories.map((c) => ({ id: c.id, label: c.translations?.find((t) => t.languageId === esId)?.name || c.adminName }))}
+          categoriaId={categoriaId}
+          estado={estado}
+          pendientes={pendientes}
+          update={update}
+          onClear={clearOnlyFilters}
+          count={visible.length}
+        />
+      </Box>
+    );
+  }
+
   return (
     <Box>
       {header}
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mb: filtering ? 1.5 : 2 }}>
-        <TextField
-          value={q}
-          onChange={(e) => changeSearch(e.target.value)}
-          disabled={controlsDisabled}
-          placeholder="Buscar por título o nombre admin"
-          sx={{ width: 360, '& .MuiOutlinedInput-input': { pl: 0 } }}
-          slotProps={{
-            htmlInput: { 'aria-label': 'Buscar por título o nombre admin' },
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Search sx={{ color: 'tertiary' }} aria-hidden />
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mb: chips.length ? 1.5 : 2 }}>
+        {searchField}
         <Select
           value={categoriaId}
           onChange={(e) => update({ categoria: e.target.value })}
@@ -365,59 +627,19 @@ export default function TourList() {
         </Select>
         <Button
           variant="outlined"
-          aria-pressed={pendientes === '1'}
+          aria-pressed={pendientes !== ''}
           disabled={controlsDisabled}
-          startIcon={pendientes === '1' ? <Check /> : null}
-          onClick={() => update({ pendientes: pendientes === '1' ? '' : '1' })}
-          sx={{ width: 168, ...(pendientes === '1' && { bgcolor: 'neutral.chip', color: 'text.primary' }) }}
+          startIcon={pendientes !== '' ? <Check /> : null}
+          onClick={() => update({ pendientes: pendientes !== '' ? '' : '1' })}
+          sx={{ width: 168, ...(pendientes !== '' && { bgcolor: 'neutral.chip', color: 'text.primary' }) }}
         >
           Con pendientes
         </Button>
-        <Box role="status" sx={{ ml: 'auto', ...numeric, fontSize: 14, color: 'text.secondary' }}>
-          {loading && <Skeleton variant="rounded" width={76} height={16} />}
-          {ready && (filtering ? `${visible.length} de ${total} tours` : `${total} ${total === 1 ? 'tour' : 'tours'}`)}
-        </Box>
+        {counter}
       </Box>
 
-      {ready && filtering && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-          {chips.map((c) => (
-            <Chip
-              key={c.key}
-              variant="outlined"
-              label={c.label}
-              onClick={() => removeChip(c.key)}
-              onDelete={() => removeChip(c.key)}
-              deleteIcon={<Close />}
-              aria-label={`Quitar filtro ${c.label}`}
-              sx={{ height: 28, borderColor: 'border.control', fontWeight: 400, maxWidth: 320 }}
-            />
-          ))}
-          <Link component="button" type="button" underline="always" color="primary.main" onClick={clearFilters} sx={{ fontSize: 14, fontWeight: 600 }}>
-            Quitar filtros
-          </Link>
-        </Box>
-      )}
-
-      {loading && <SkeletonTable />}
-      {failed && (
-        <ErrorState title="No pudimos cargar los tours." description="Revisa tu conexión e intenta de nuevo." onRetry={retry} />
-      )}
-      {ready && visible.length === 0 && (
-        <EmptyState
-          icon={<Search sx={{ color: 'tertiary', fontSize: 32 }} aria-hidden />}
-          title={search ? `Ningún tour coincide con «${search}».` : 'Ningún tour coincide con los filtros.'}
-          description={search ? 'Revisa la ortografía o prueba con menos palabras.' : 'Prueba con otros filtros o quítalos todos.'}
-          action={{ label: 'Quitar filtros', onClick: clearFilters, variant: 'outlined' }}
-        />
-      )}
-      {ready && visible.length > 0 && (
-        <ToursTable>
-          {visible.map((row) => (
-            <TourRow key={row.tour.id} row={row} onToggle={setActive} />
-          ))}
-        </ToursTable>
-      )}
+      {chipRow}
+      {states}
     </Box>
   );
 }

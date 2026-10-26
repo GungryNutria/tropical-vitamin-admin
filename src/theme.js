@@ -32,6 +32,7 @@ export const numeric = { fontVariantNumeric: 'tabular-nums' };
 
 const focusRing = { outline: `2px solid ${color.accent}`, outlineOffset: '2px' };
 
+// Controles de 44 px por debajo de 900 px (AC-UX-12) y de 40 desde ahí.
 const theme = createTheme({
   palette: {
     mode: 'dark',
@@ -84,7 +85,7 @@ const theme = createTheme({
           minHeight: 40,
           borderRadius: 6,
           padding: '8px 16px',
-          [t.breakpoints.down('sm')]: { minHeight: 44 },
+          [t.breakpoints.down('md')]: { minHeight: 44 },
           '&.Mui-disabled': { backgroundColor: color.neutralChip, color: color.textTertiary, borderColor: color.neutralChip },
         }),
         containedPrimary: { '&:hover': { backgroundColor: color.accentHover } },
@@ -102,7 +103,7 @@ const theme = createTheme({
         root: ({ theme: t }) => ({
           width: 40,
           height: 40,
-          [t.breakpoints.down('sm')]: { width: 44, height: 44 },
+          [t.breakpoints.down('md')]: { width: 44, height: 44 },
           '&:hover': { backgroundColor: color.bgRaised },
         }),
       },
@@ -113,7 +114,7 @@ const theme = createTheme({
         root: ({ theme: t }) => ({
           minHeight: 40,
           borderRadius: 6,
-          [t.breakpoints.down('sm')]: { minHeight: 44 },
+          [t.breakpoints.down('md')]: { minHeight: 44 },
           '& .MuiOutlinedInput-notchedOutline': { borderColor: color.borderControl },
           '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: color.borderControl },
           // Foco = anillo amarillo; el borde no cambia.
@@ -123,9 +124,10 @@ const theme = createTheme({
           '&.Mui-disabled': { backgroundColor: color.bgBase },
           '&.Mui-disabled .MuiOutlinedInput-notchedOutline': { borderColor: color.borderSubtle },
         }),
-        input: { padding: '9px 12px', height: 22, boxSizing: 'content-box' },
+        // 44 px por debajo de 900 px: el propio input mide lo que el control.
+        input: ({ theme: t }) => ({ padding: '9px 12px', height: 22, boxSizing: 'content-box', [t.breakpoints.down('md')]: { padding: '11px 12px' } }),
         multiline: { padding: 0 },
-        inputMultiline: { padding: '9px 12px' },
+        inputMultiline: ({ theme: t }) => ({ padding: '9px 12px', [t.breakpoints.down('md')]: { padding: '11px 12px' } }),
       },
     },
     // El select usa min-height 1.4375em (21.56 px): sin esto el control mide 39.56 px y no llega a 40.
