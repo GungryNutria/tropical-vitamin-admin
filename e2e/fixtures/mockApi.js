@@ -44,7 +44,7 @@ export async function mockApi(page, { authenticated = true, data = {} } = {}) {
     if (forced) return json(route, forced.body ?? {}, forced.status ?? 200);
 
     if (req.method() === 'POST' && path === '/auth/login') return json(route, { access_token: 'token-de-prueba', user });
-    if (path.startsWith('/upload/')) return route.fulfill({ status: 200, headers: cors, contentType: 'image/gif', body: PIXEL });
+    if (req.method() === 'GET' && path.startsWith('/upload/')) return route.fulfill({ status: 200, headers: cors, contentType: 'image/gif', body: PIXEL });
     if (req.method() === 'GET') {
       if (path === '/tours/all') return json(route, tourData);
       if (path === '/categories') return json(route, categoryData);
@@ -52,6 +52,8 @@ export async function mockApi(page, { authenticated = true, data = {} } = {}) {
       const tourId = path.match(/^\/tours\/(\d+)$/);
       if (tourId) return json(route, tourData.find((t) => t.id === Number(tourId[1])) ?? null);
     }
+    if (req.method() === 'POST' && path === '/upload') return json(route, { url: '/uploads/6f1c2e0a-nueva-foto.jpg' }, 201);
+    if (req.method() === 'POST' && path === '/tours') return json(route, { id: 40, ...JSON.parse(req.postData() || '{}') }, 201);
     return json(route, {});
   });
 

@@ -16,3 +16,13 @@ export function formatPrice(amount) {
   if (!Number.isFinite(value)) return '';
   return `$${priceNumber.format(value)} MXN`;
 }
+
+const sizeNumber = new Intl.NumberFormat('es-MX', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+// 3984588 -> "3.8 MB" (es-MX: punto decimal); menos de 1 MB -> "512 KB"
+export function formatFileSize(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) return '';
+  if (value >= 1024 * 1024) return `${sizeNumber.format(value / (1024 * 1024))} MB`;
+  return `${Math.max(1, Math.round(value / 1024))} KB`;
+}
