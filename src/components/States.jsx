@@ -31,7 +31,7 @@ function CenteredState({ icon, title, description, children, role }) {
 export function EmptyState({ title, description, action, icon }) {
   return (
     <CenteredState
-      icon={icon || <ImageOutlined sx={{ color: 'tertiary', fontSize: 32 }} aria-hidden />}
+      icon={icon === undefined ? <ImageOutlined sx={{ color: 'tertiary', fontSize: 32 }} aria-hidden /> : icon}
       title={title}
       description={description}
     >

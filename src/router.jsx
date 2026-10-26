@@ -1,7 +1,7 @@
 import { createBrowserRouter } from 'react-router-dom';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
+import Home from './pages/Home';
 import TourList from './pages/tours/TourList';
 import TourEdit from './pages/tours/TourEdit';
 import LanguageList from './pages/languages/LanguageList';
@@ -20,7 +20,7 @@ const router = createBrowserRouter([
       </PrivateRoute>
     ),
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <Home /> },
       { path: 'tours', element: <TourList /> },
       { path: 'tours/new', element: <TourEdit /> },
       { path: 'tours/:id', element: <TourEdit /> },

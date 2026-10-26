@@ -23,6 +23,7 @@ const color = {
   warning: '#FB923C',
   warningBg: '#302319',
   neutralChip: '#262626',
+  neutralChipOnSelected: '#333333',
 };
 
 export const FONT_FAMILY = 'system-ui, "Segoe UI", Roboto, Arial, sans-serif';
@@ -49,7 +50,7 @@ const theme = createTheme({
     border: { subtle: color.borderSubtle, control: color.borderControl },
     tertiary: color.textTertiary,
     statusBg: { success: color.successBg, danger: color.dangerBg, warning: color.warningBg },
-    neutral: { chip: color.neutralChip },
+    neutral: { chip: color.neutralChip, chipOnSelected: color.neutralChipOnSelected },
     dangerSolid: color.dangerSolid,
   },
   shape: { borderRadius: 6 },

@@ -49,10 +49,10 @@ test.describe('V2 Menú: barra superior y cajón a 390 (T-9)', () => {
     expect(await noOverflow(page)).toBe(true);
   });
 
-  test('el título de la barra sigue a la vista y "Nuevo" solo aparece en la lista de tours', async ({ page }) => {
+  test('el título de la barra sigue a la vista; "Nuevo" va en la barra de Inicio y la lista de tours, no en la edición (T-10: Inicio lleva "Nuevo tour")', async ({ page }) => {
     await open(page, '/');
     await expect(page.getByRole('banner').getByText('Inicio', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Nuevo', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('banner').getByRole('link', { name: 'Nuevo', exact: true })).toHaveCount(1);
     await page.goto('/tours/1');
     await expect(page.getByRole('banner').getByText('Tours', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Nuevo', exact: true })).toHaveCount(0);
