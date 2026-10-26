@@ -131,6 +131,16 @@ test.describe('V4 Lista de tours a 390 (T-9)', () => {
     await expect(page.getByRole('button', { name: /^Quitar filtro/ })).toHaveCount(0);
   });
 
+  test('"Quitar filtros" borra filtros y búsqueda también a 390', async ({ page }) => {
+    await openList(page, '/tours?categoria=2&estado=activos');
+    await page.getByPlaceholder(SEARCH).fill('snorkel');
+    await expect(page).toHaveURL(/q=snorkel/);
+    await page.getByRole('button', { name: 'Quitar filtros' }).click();
+    await expect(page).toHaveURL('/tours');
+    await expect(page.getByPlaceholder(SEARCH)).toHaveValue('');
+    await expect(counter(page)).toHaveText('39 tours');
+  });
+
   test('E4.3c: llegar desde Inicio muestra "Con pendientes" encendido en la hoja y el subfiltro como chip', async ({ page }) => {
     await openList(page, '/tours?pendientes=foto');
     await expect(page.getByRole('button', { name: 'Quitar filtro Pendientes: sin foto' })).toBeVisible();

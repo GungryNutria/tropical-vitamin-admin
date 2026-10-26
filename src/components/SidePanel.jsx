@@ -1,6 +1,7 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Box, Button, Drawer, IconButton, Typography } from '@mui/material';
 import Close from '@mui/icons-material/Close';
+import { useToasts } from '../lib/useToasts';
 import ConfirmDialog from './ConfirmDialog';
 
 // Panel lateral de 480 px (pantalla completa a 390) con un solo Guardar.
@@ -9,6 +10,10 @@ import ConfirmDialog from './ConfirmDialog';
 export default function SidePanel({ open, title, onClose, onSave, saving = false, saveLabel = 'Guardar', dirty = false, name = '', children }) {
   const titleId = useId();
   const [asking, setAsking] = useState(false);
+  const toasts = useToasts();
+  useEffect(() => {
+    if (open) toasts.closeErrors();
+  }, [open, toasts]);
   const requestClose = () => (dirty ? setAsking(true) : onClose());
   return (
     <>

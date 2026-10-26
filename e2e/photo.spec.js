@@ -44,10 +44,10 @@ test.describe('Foto del tour (T-8)', () => {
     expect(uploads(requests)).toHaveLength(1);
   });
 
-  test('AC-15: más de 10 MB se rechaza sin llamar al API, con el peso en formato es-MX', async ({ page }) => {
+  test('AC-15: más de 10 MB se rechaza sin llamar al API, sin citar el peso', async ({ page }) => {
     const { requests } = await openTour(page, '/tours/new');
     await chooser(page).setInputFiles(fileOf('grande.png', 'image/png', Math.round(14.2 * MB)));
-    const notice = page.getByRole('alert').filter({ hasText: 'Esa foto pesa 14.2 MB. El máximo es 10 MB.' });
+    const notice = page.getByRole('alert').filter({ hasText: 'Esa foto pesa más de 10 MB.' });
     await expect(notice).toContainText('Elige una más ligera.');
     expect(uploads(requests)).toEqual([]);
   });
@@ -55,7 +55,7 @@ test.describe('Foto del tour (T-8)', () => {
   test('AC-15: un archivo de exactamente 10 MB también se rechaza (el API da 413), uno apenas menor se sube', async ({ page }) => {
     const { requests } = await openTour(page, '/tours/new');
     await chooser(page).setInputFiles(fileOf('justo.jpg', 'image/jpeg', 10 * MB));
-    await expect(page.getByRole('alert').filter({ hasText: 'El máximo es 10 MB.' })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Esa foto pesa más de 10 MB.' })).toBeVisible();
     expect(uploads(requests)).toEqual([]);
     await chooser(page).setInputFiles(fileOf('casi.jpg', 'image/jpeg', 10 * MB - 1));
     await expect(preview(page)).toBeVisible();

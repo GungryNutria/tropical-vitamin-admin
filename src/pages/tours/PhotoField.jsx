@@ -25,7 +25,7 @@ function validate(file) {
     return { title: ext ? `Ese archivo es ${ext}.` : 'Ese archivo no es una imagen.', detail: `Elige un ${FORMATS}.` };
   }
   if (!(file.size < MAX_BYTES)) {
-    return { title: `Esa foto pesa ${formatFileSize(file.size)}. El máximo es 10 MB.`, detail: 'Elige una más ligera.' };
+    return { title: 'Esa foto pesa más de 10 MB.', detail: 'Elige una más ligera.' };
   }
   return null;
 }

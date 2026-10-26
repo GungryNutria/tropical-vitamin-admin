@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Box, Chip, Typography } from '@mui/material';
 import Check from '@mui/icons-material/Check';
 import api, { errorMessage } from '../../lib/api';
-import { activeLanguages, isDuplicateAdminName } from '../../lib/catalog';
+import { activeLanguages, isDuplicateAdminName, orderLanguages } from '../../lib/catalog';
 import { joinList, langLabel } from '../../lib/langLabel';
 import { useToasts } from '../../lib/useToasts';
 import Banner from '../../components/Banner';
@@ -27,7 +27,8 @@ const textChip = (complete) => (
 
 // Un solo lugar para crear y editar (REQ-20). Guarda por partes y reintenta solo lo fallido (REQ-21, AC-20).
 // `category` = null para crear. Las traducciones existentes vienen en category.translations.
-export default function CategoryPanel({ category, categories, languages, onClose, onSaved }) {
+export default function CategoryPanel({ category, categories, languages: unorderedLanguages, onClose, onSaved }) {
+  const languages = useMemo(() => orderLanguages(unorderedLanguages), [unorderedLanguages]);
   const queryClient = useQueryClient();
   const toasts = useToasts();
   const active = activeLanguages(languages);

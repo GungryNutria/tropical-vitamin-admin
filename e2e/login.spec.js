@@ -126,7 +126,7 @@ test.describe('V1 Login (T-9)', () => {
     api.override((r) => (r.path === '/auth/login' ? { status: 500, body: {} } : undefined));
     await fill(page);
     await enter(page).click();
-    await expect(page.getByRole('alert')).toContainText('El servidor tuvo un problema.');
+    await expect(page.getByRole('alert')).toHaveText('El servidor tuvo un problema. Intenta de nuevo en un momento.');
     await expect(password(page)).toHaveValue('secreto-123');
   });
 

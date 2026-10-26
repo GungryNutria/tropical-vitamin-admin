@@ -12,7 +12,7 @@ import logo from '../assets/logo.png';
 const MESSAGES = {
   credentials: { text: 'El correo o la contraseña no coinciden.' },
   network: { title: 'No pudimos conectar con el servidor.', text: 'Revisa tu conexión e intenta de nuevo.' },
-  server: { title: 'El servidor tuvo un problema.', text: 'Intenta de nuevo en un momento.' },
+  server: { text: 'El servidor tuvo un problema. Intenta de nuevo en un momento.' },
 };
 
 export default function Login() {

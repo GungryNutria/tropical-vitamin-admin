@@ -120,7 +120,7 @@ export default function CategoryList() {
           { key: 'name', label: 'Categoría', width: 240, render: nameCell },
           { key: 'description', label: 'Descripción', render: (c) => <Typography noWrap variant="body2" color="text.secondary" title={labels(c, languages).description}>{labels(c, languages).description}</Typography> },
           { key: 'tours', label: 'Tours', width: 80, align: 'right', render: (c) => <Typography sx={{ fontSize: 14, ...numeric }}>{c._count?.tours ?? 0}</Typography> },
-          { key: 'languages', label: 'Idiomas', width: 200, render: (c) => <Box sx={{ pl: 2 }}><LangChips status={categoryLanguageStatus(c, languages)} highlighted={highlightId === c.id} /></Box> },
+          { key: 'languages', label: 'Idiomas', width: 200, pl: 2, render: (c) => <LangChips status={categoryLanguageStatus(c, languages)} highlighted={highlightId === c.id} /> },
           { key: 'actions', label: 'Acciones', srOnly: true, width: 112, render: actions },
         ]}
         renderCard={(c) => (
