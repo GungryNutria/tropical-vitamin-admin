@@ -91,7 +91,7 @@ const gridSx = {
   display: 'grid',
   gap: { xs: '16px', lg: '24px 48px' },
   alignItems: 'start',
-  gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 720px) 320px' },
+  gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) 320px' },
 };
 
 function FormSkeleton() {
