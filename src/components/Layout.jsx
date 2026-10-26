@@ -165,9 +165,7 @@ export default function Layout() {
         <AccountFooter user={user} onLogout={handleLogout} />
       </Box>
       <Box component="main" sx={{ flexGrow: 1, ml: `${SIDEBAR_WIDTH}px`, minWidth: 0, p: 4 }}>
-        <Box sx={{ maxWidth: 1200 }}>
-          <Outlet context={{ mobile, topbarSlot: null }} />
-        </Box>
+        <Outlet context={{ mobile, topbarSlot: null }} />
       </Box>
     </Box>
   );
