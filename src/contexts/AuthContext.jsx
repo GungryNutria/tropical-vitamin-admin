@@ -15,12 +15,14 @@ function readSession() {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(readSession);
+  const [reason, setReason] = useState(null);
   const loading = false;
 
   useEffect(() => {
-    setUnauthorizedHandler(() => {
+    setUnauthorizedHandler((why) => {
       localStorage.removeItem('adminToken');
       localStorage.removeItem('adminUser');
+      setReason(why || null);
       setUser(null);
     });
   }, []);
@@ -36,32 +38,29 @@ export function AuthProvider({ children }) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        return { 
-          success: false, 
-          error: errorData.message || 'Credenciales inválidas' 
-        };
+        // 401/400: credenciales; cualquier otro estado: el servidor falló.
+        return { success: false, kind: response.status === 401 || response.status === 400 ? 'credentials' : 'server' };
       }
 
       const data = await response.json();
       
       localStorage.setItem('adminToken', data.access_token);
       localStorage.setItem('adminUser', JSON.stringify(data.user));
+      setReason(null);
       setUser(data.user);
       
       return { success: true };
     } catch (error) {
       console.error('Login error:', error);
-      return { 
-        success: false, 
-        error: 'Error de conexión. Intenta de nuevo.' 
-      };
+      return { success: false, kind: 'network' };
     }
   };
 
+  // 'logout': salida deliberada; el login no muestra aviso ni vuelve a la ruta anterior.
   const logout = () => {
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminUser');
+    setReason('logout');
     setUser(null);
   };
 
@@ -70,7 +69,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, getToken }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, getToken, reason }}>
       {children}
     </AuthContext.Provider>
   );

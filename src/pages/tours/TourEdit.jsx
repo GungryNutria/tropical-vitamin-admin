@@ -1,419 +1,606 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, useNavigate } from 'react-router-dom';
-import {
-  Box,
-  Typography,
-  Paper,
-  TextField,
-  Button,
-  Grid,
-  MenuItem,
-  FormControlLabel,
-  Switch,
-  Tabs,
-  Tab,
-} from '@mui/material';
-import { Save as SaveIcon, ArrowBack as ArrowBackIcon, Upload as UploadIcon } from '@mui/icons-material';
-import api from '../../lib/api';
+import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Box, Button, ButtonBase, Chip, CircularProgress, Link, MenuItem, Skeleton, Switch, Tab, Tabs, Typography } from '@mui/material';
+import ArrowBack from '@mui/icons-material/ArrowBack';
+import Check from '@mui/icons-material/Check';
+import ChevronRight from '@mui/icons-material/ChevronRight';
+import KeyboardArrowDown from '@mui/icons-material/KeyboardArrowDown';
+import api, { errorMessage } from '../../lib/api';
+import { formatDuration } from '../../lib/format';
+import { activeLanguages } from '../../lib/catalog';
+import { useToasts } from '../../lib/useToasts';
+import { useIsStacked } from '../../lib/useIsMobile';
+import useUnsavedGuard from '../../lib/useUnsavedGuard';
+import Banner from '../../components/Banner';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import FormField from '../../components/FormField';
+import { ErrorState, NotFound } from '../../components/States';
+import PhotoField from './PhotoField';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-const UPLOADS_URL = import.meta.env.VITE_UPLOADS_URL || API_URL;
+const ID_RE = /^[1-9]\d*$/;
 
-// Helper to get proper image URL - proxy through API for presigned URLs
-function getImageUrl(img) {
-  if (!img) return null;
-  // Extract filename from any URL format
-  const filename = img.split('/').pop();
-  // Use API proxy endpoint which generates presigned URLs
-  return `${API_URL}/upload/${filename}`;
-}
+const fetchTour = async (id) => (await api.get(`/tours/${id}`)).data;
+const fetchCategories = async () => (await api.get('/categories')).data;
+const fetchLanguages = async () => (await api.get('/languages')).data;
 
-async function fetchTour(id) {
-  const { data } = await api.get(`/tours/${id}`);
-  return data;
-}
+const blank = (v) => !String(v ?? '').trim();
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const srOnly = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
 
-async function fetchCategories() {
-  const { data } = await api.get(`/categories`);
-  return data;
-}
+// "en inglés", "en español"; para otros idiomas, el nombre tal cual.
+const inLanguage = (language) => ({ es: 'en español', en: 'en inglés' })[language.code] || `en ${language.name}`;
 
-async function fetchLanguages() {
-  const { data } = await api.get(`/languages`);
-  return data;
-}
-
-async function createTour(data) {
-  const { data: result } = await api.post(`/tours`, data);
-  return result;
-}
-
-async function updateTour({ id, data }) {
-  const { data: result } = await api.patch(`/tours/${id}`, data);
-  return result;
-}
-
-async function uploadImage(file, name) {
-  const formData = new FormData();
-  formData.append('file', file);
-  if (name) {
-    formData.append('name', name);
-  }
-  const { data } = await api.post(`/upload`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+function initialForm(tour, languages) {
+  const translations = {};
+  languages.forEach((l) => {
+    const t = tour?.translations?.find((x) => x.languageId === l.id);
+    translations[l.id] = { title: t?.title ?? '', description: t?.description ?? '' };
   });
-  return data;
+  return {
+    adminTitle: tour?.adminTitle ?? '',
+    categoryId: tour ? String(tour.categoryId ?? tour.category?.id ?? '') : '',
+    location: tour?.location ?? '',
+    duration: tour ? String(tour.duration ?? '') : '',
+    price: tour ? String(tour.price ?? '') : '',
+    img: tour?.img ?? '',
+    isActive: tour ? !!tour.isActive : false, // un tour nuevo nace oculto (D1)
+    translations,
+  };
+}
+
+const durationMinutes = (value) => (/^\d+$/.test(value.trim()) && Number(value) >= 1 ? Number(value) : null);
+
+// Errores en orden de lectura: Datos generales y luego cada idioma activo (los inactivos no validan, REQ-27).
+function validate(form, languages) {
+  const errors = [];
+  const add = (id, label, message, language) => errors.push({ id, label, message, languageId: language?.id });
+  if (blank(form.adminTitle)) add('tour-adminTitle', 'Nombre admin', 'Escribe el nombre admin.');
+  if (!form.categoryId) add('tour-categoryId', 'Categoría', 'Elige una categoría.');
+  if (blank(form.location)) add('tour-location', 'Ubicación', 'Escribe la ubicación.');
+  if (blank(form.duration)) add('tour-duration', 'Duración', 'Escribe la duración en minutos.');
+  else if (!durationMinutes(form.duration)) add('tour-duration', 'Duración', 'Escribe minutos en número entero, 1 o más.');
+  if (blank(form.price)) add('tour-price', 'Precio', 'Escribe el precio.');
+  else if (!(Number(form.price) >= 0)) add('tour-price', 'Precio', 'Escribe un precio de 0 o más.');
+  activeLanguages(languages).forEach((l) => {
+    const t = form.translations[l.id];
+    if (blank(t.title)) add(`tour-title-${l.id}`, `Título (${l.name})`, `Escribe el título ${inLanguage(l)}.`, l);
+    if (blank(t.description)) add(`tour-description-${l.id}`, `Descripción (${l.name})`, `Escribe la descripción ${inLanguage(l)}.`, l);
+  });
+  return errors;
+}
+
+function Crumbs({ current }) {
+  return (
+    <Box component="nav" aria-label="Ruta" sx={{ display: { xs: 'none', md: 'flex' }, gap: 1.5, fontSize: 13, lineHeight: '18px', color: 'text.secondary' }}>
+      <Link component={RouterLink} to="/tours" underline="hover" color="inherit">Tours</Link>
+      {current && (
+        <>
+          <span aria-hidden>/</span>
+          <Typography component="span" variant="caption" aria-current="page" sx={{ color: 'text.primary' }}>{current}</Typography>
+        </>
+      )}
+    </Box>
+  );
+}
+
+const card = { p: { xs: 2, md: 3 }, bgcolor: 'background.paper', border: '1px solid', borderColor: 'border.subtle', borderRadius: '8px' };
+// En una columna el orden es: aviso, foto, "Visible en la web", datos, textos (E5.3 a 390); en dos, el del DOM.
+const bannerOrder = { order: { xs: 1, lg: 0 } };
+const gridSx = {
+  display: 'grid',
+  gap: { xs: '16px', lg: '24px 48px' },
+  alignItems: 'start',
+  gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 720px) 320px' },
+};
+
+function FormSkeleton() {
+  const bar = (w, h = 40) => <Skeleton variant="rounded" width={w} height={h} sx={{ mb: 1.5 }} />;
+  return (
+    <Box aria-busy="true" aria-label="Cargando el tour" sx={gridSx}>
+      <Box sx={{ gridColumn: { lg: 1 } }}>
+        {bar(120, 14)}
+        {bar(260, 28)}
+      </Box>
+      <Box sx={{ gridColumn: { lg: 1 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box sx={card}>{bar(180, 16)}{bar('100%')}{bar('100%')}{bar('100%')}</Box>
+        <Box sx={card}>{bar(180, 16)}{bar(200, 24)}{bar('100%')}{bar('100%', 112)}</Box>
+      </Box>
+      <Box sx={{ gridColumn: { lg: 2 }, gridRow: { lg: '2 / span 2' } }}>
+        <Box sx={card}>{bar(60, 16)}{bar('100%', 192)}{bar('100%')}</Box>
+        <Box sx={{ ...card, mt: 2 }}>{bar('100%', 32)}</Box>
+        <Button variant="contained" disabled fullWidth sx={{ mt: 2 }}>Guardar</Button>
+      </Box>
+    </Box>
+  );
+}
+
+function TabStatus({ language, complete, errorCount }) {
+  if (errorCount > 0) {
+    return <Chip size="small" label={plural(errorCount, 'error', 'errores')} sx={{ ml: 1, bgcolor: 'statusBg.danger', color: 'error.main' }} />;
+  }
+  if (!language.isActive) return null;
+  if (complete) {
+    return (
+      <>
+        <Check sx={{ ml: 0.75, fontSize: 18, color: 'success.main' }} aria-hidden />
+        <span style={srOnly}> (completo)</span>
+      </>
+    );
+  }
+  return <Chip size="small" label="Pendiente" sx={{ ml: 1, bgcolor: 'statusBg.warning', color: 'warning.main' }} />;
+}
+
+function TourForm({ tour, categories, languages, savedFlag }) {
+  const isNew = !tour;
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
+  const toasts = useToasts();
+  const stacked = useIsStacked(); // bajo 1200 px el riel se apila y Guardar pasa a la barra inferior fija
+
+  const esId = languages.find((l) => l.code === 'es')?.id;
+  const categoryLabel = (c) => c.translations?.find((t) => t.languageId === esId)?.name || c.adminName;
+
+  const [baseline, setBaseline] = useState(() => initialForm(tour, languages));
+  const [form, setForm] = useState(baseline);
+  const [activeLang, setActiveLang] = useState(languages.find((l) => l.isActive)?.id ?? languages[0]?.id);
+  const [submitted, setSubmitted] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [justSaved, setJustSaved] = useState(!!savedFlag);
+  const [uploading, setUploading] = useState(false);
+  const [focusRequest, setFocusRequest] = useState(null);
+  const [createdId, setCreatedId] = useState(null);
+
+  const title = (esId && baseline.translations[esId]?.title.trim()) || baseline.adminTitle.trim() || 'Nuevo tour';
+  const handleSaveRef = useRef(null);
+  const errorToastRef = useRef(null);
+
+  const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
+  const blocker = useUnsavedGuard(dirty);
+
+  // Tras crear un tour: confirmación en la página de edición del tour nuevo (REQ-9).
+  const toastedRef = useRef(false);
+  useEffect(() => {
+    if (!savedFlag || toastedRef.current) return;
+    toastedRef.current = true;
+    toasts.success('Cambios guardados');
+    navigate(location.pathname, { replace: true, state: null });
+  }, [savedFlag, toasts, navigate, location.pathname]);
+
+  // Navegar a /tours/<id> solo cuando el formulario ya quedó limpio (si no, el aviso de salida lo frenaría).
+  useEffect(() => {
+    if (createdId && !dirty) navigate(`/tours/${createdId}`, { replace: true, state: { saved: true } });
+  }, [createdId, dirty, navigate]);
+
+  // Los avisos suben sobre la barra inferior (88 px + 8 de aire).
+  useEffect(() => {
+    if (!stacked) return undefined;
+    document.documentElement.style.setProperty('--toast-bottom', '96px');
+    return () => document.documentElement.style.removeProperty('--toast-bottom');
+  }, [stacked]);
+
+  useEffect(() => {
+    if (focusRequest) document.getElementById(focusRequest.id)?.focus();
+  }, [focusRequest]);
+
+  const errors = useMemo(() => validate(form, languages), [form, languages]);
+  const shown = submitted ? errors : [];
+  const errorOf = (id) => shown.find((e) => e.id === id)?.message;
+
+  const setField = (name, value) => setForm((f) => ({ ...f, [name]: value }));
+  const setText = (languageId, field, value) =>
+    setForm((f) => ({ ...f, translations: { ...f.translations, [languageId]: { ...f.translations[languageId], [field]: value } } }));
+
+  const goTo = (error) => {
+    if (error.languageId) setActiveLang(error.languageId);
+    setFocusRequest({ id: error.id });
+  };
+
+  const save = useMutation({
+    mutationFn: async ({ payload }) => {
+      const { data } = isNew ? await api.post('/tours', payload) : await api.patch(`/tours/${tour.id}`, payload);
+      return data;
+    },
+    onSuccess: (data, { snapshot }) => {
+      setBaseline(snapshot);
+      setSaveError(null);
+      setJustSaved(true);
+      queryClient.invalidateQueries({ queryKey: ['tours'] });
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      if (isNew) setCreatedId(data?.id);
+      else toasts.success('Cambios guardados');
+    },
+    onError: (err) => {
+      setSaveError(errorMessage(err));
+      // Bajo 1200 px el banner puede quedar fuera de la vista: el error y Reintentar también van en un aviso fijo.
+      if (stacked) {
+        errorToastRef.current = toasts.error(`No pudimos guardar «${title}».`, {
+          action: { label: 'Reintentar', onClick: () => handleSaveRef.current?.() },
+        });
+      }
+    },
+  });
+
+  const handleSave = () => {
+    if (save.isPending || uploading) return;
+    if (errorToastRef.current) toasts.close(errorToastRef.current);
+    errorToastRef.current = null;
+    setSubmitted(true);
+    setSaveError(null);
+    if (errors.length) {
+      goTo(errors[0]);
+      return;
+    }
+    const translations = languages
+      .filter((l) => {
+        const t = form.translations[l.id];
+        return l.isActive || tour?.translations?.some((x) => x.languageId === l.id) || !blank(t.title) || !blank(t.description);
+      })
+      .map((l) => ({ languageId: l.id, ...form.translations[l.id] }));
+    save.mutate({
+      snapshot: form,
+      payload: {
+        adminTitle: form.adminTitle,
+        price: Number(form.price),
+        location: form.location,
+        duration: durationMinutes(form.duration),
+        img: form.img || null,
+        isActive: form.isActive,
+        categoryId: Number(form.categoryId),
+        translations,
+      },
+    });
+  };
+
+  const minutes = durationMinutes(form.duration);
+
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  });
+
+  let railNote = null;
+  if (uploading) railNote = <Typography variant="caption" color="text.secondary">Esperando la foto</Typography>;
+  else if (dirty) {
+    railNote = (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'warning.main' }} />
+        <Typography variant="caption" color="text.secondary">Cambios sin guardar</Typography>
+      </Box>
+    );
+  } else if (justSaved) {
+    railNote = (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'success.main' }}>
+        <Check sx={{ fontSize: 16 }} aria-hidden />
+        <Typography variant="caption" sx={{ color: 'inherit' }}>Guardado hace un momento</Typography>
+      </Box>
+    );
+  }
+
+  const saveButton = (
+    <Button
+      type="submit"
+      variant="contained"
+      fullWidth
+      disabled={uploading}
+      aria-busy={save.isPending || undefined}
+      aria-describedby="save-note"
+      sx={{ minHeight: 44 }}
+    >
+      {save.isPending ? (
+        <>
+          <CircularProgress size={18} thickness={5} color="inherit" sx={{ mr: 1 }} aria-hidden />
+          Guardando…
+        </>
+      ) : (
+        'Guardar'
+      )}
+    </Button>
+  );
+  const saveNote = (
+    <Box id="save-note" sx={{ display: 'flex', justifyContent: 'center', minHeight: 18 }} role="status">
+      {railNote || (stacked && <Typography variant="caption" color="text.secondary">Sin cambios</Typography>)}
+    </Box>
+  );
+
+  return (
+    <Box component="form" noValidate onSubmit={(e) => { e.preventDefault(); handleSave(); }} sx={{ ...gridSx, ...(stacked && { pb: '96px' }) }}>
+      <Box sx={{ gridColumn: { lg: 1 }, display: 'flex', flexDirection: { xs: 'column-reverse', md: 'row' }, justifyContent: 'space-between', alignItems: 'flex-start', gap: { xs: 0.5, md: 2 } }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Crumbs current={title} />
+          <Typography variant="h1" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>{title}</Typography>
+        </Box>
+        <Link
+          component={RouterLink}
+          to="/tours"
+          underline="always"
+          sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'primary.main', fontSize: 14, fontWeight: 600, flexShrink: 0, mt: { md: 0.5 }, minHeight: { xs: 44, md: 0 } }}
+        >
+          <ArrowBack sx={{ fontSize: 18 }} aria-hidden />
+          Volver a la lista
+        </Link>
+      </Box>
+
+      <Box sx={{ gridColumn: { lg: 1 }, display: { xs: 'contents', lg: 'flex' }, flexDirection: 'column', gap: 3, minWidth: 0 }}>
+        {shown.length > 0 ? (
+          <Banner severity="error" sx={bannerOrder} title={`Revisa ${plural(shown.length, 'campo', 'campos')}`}>
+            <span>Corrige lo marcado para guardar. No se guardó nada todavía.</span>
+            <Box component="ul" sx={{ listStyle: 'none', m: 0, mt: 0.5, p: 0 }}>
+              {shown.map((e) => (
+                <li key={e.id}>
+                  <ButtonBase
+                    onClick={() => goTo(e)}
+                    sx={{ gap: 0.5, color: 'primary.main', textDecoration: 'underline', fontSize: 14, borderRadius: '4px', textAlign: 'left' }}
+                  >
+                    <ChevronRight sx={{ fontSize: 16 }} aria-hidden />
+                    {e.label}
+                  </ButtonBase>
+                </li>
+              ))}
+            </Box>
+          </Banner>
+        ) : (
+          saveError && <Banner severity="error" sx={bannerOrder} title="No se pudo guardar el tour" action={{ label: 'Reintentar', onClick: handleSave }}>{saveError}</Banner>
+        )}
+
+        <Box component="section" aria-labelledby="general-title" sx={{ ...card, order: { xs: 4, lg: 0 } }}>
+          <Typography id="general-title" variant="h2" component="h2" sx={{ mb: 2 }}>Datos generales</Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
+            <FormField
+              sx={{ gridColumn: { sm: '1 / -1' } }}
+              id="tour-adminTitle"
+              label="Nombre admin"
+              required
+              value={form.adminTitle}
+              onChange={(e) => setField('adminTitle', e.target.value)}
+              help="Solo lo ves tú en el admin. Ej.: snorkel-buceo"
+              error={errorOf('tour-adminTitle')}
+            />
+            <FormField
+              id="tour-categoryId"
+              label="Categoría"
+              required
+              select
+              value={form.categoryId}
+              onChange={(e) => setField('categoryId', e.target.value)}
+              error={errorOf('tour-categoryId')}
+              slotProps={{
+                select: {
+                  displayEmpty: true,
+                  IconComponent: KeyboardArrowDown,
+                  SelectDisplayProps: { id: 'tour-categoryId' },
+                  renderValue: (v) => (v ? categoryLabel(categories.find((c) => String(c.id) === v) || { adminName: v }) : <span style={{ opacity: 0.7 }}>Elige una categoría</span>),
+                },
+              }}
+            >
+              {categories.map((c) => (
+                <MenuItem key={c.id} value={String(c.id)}>{categoryLabel(c)}</MenuItem>
+              ))}
+            </FormField>
+            <FormField
+              id="tour-location"
+              label="Ubicación"
+              required
+              value={form.location}
+              onChange={(e) => setField('location', e.target.value)}
+              help="Ej.: Cancún, México"
+              error={errorOf('tour-location')}
+            />
+            <FormField
+              id="tour-duration"
+              label="Duración"
+              required
+              suffix="min"
+              value={form.duration}
+              onChange={(e) => setField('duration', e.target.value)}
+              slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+              help={minutes ? `= ${formatDuration(minutes)}` : 'Escribe los minutos. Ej.: 150 = 2 h 30 min'}
+              error={errorOf('tour-duration')}
+            />
+            <FormField
+              id="tour-price"
+              label="Precio"
+              required
+              prefix="$"
+              suffix="MXN"
+              value={form.price}
+              onChange={(e) => setField('price', e.target.value)}
+              slotProps={{ htmlInput: { inputMode: 'decimal' } }}
+              help="En pesos mexicanos."
+              error={errorOf('tour-price')}
+            />
+          </Box>
+        </Box>
+
+        <Box component="section" aria-labelledby="texts-title" sx={{ ...card, pb: 4, order: { xs: 5, lg: 0 } }}>
+          <Typography id="texts-title" variant="h2" component="h2" sx={{ mb: 2 }}>Textos por idioma</Typography>
+          <Tabs value={activeLang} onChange={(_, v) => setActiveLang(v)} aria-label="Idiomas" sx={{ borderBottom: '1px solid', borderColor: 'border.subtle', mb: 3 }}>
+            {languages.map((l) => {
+              const t = form.translations[l.id];
+              const complete = !blank(t.title) && !blank(t.description);
+              const errorCount = shown.filter((e) => e.languageId === l.id).length;
+              return (
+                <Tab
+                  key={l.id}
+                  value={l.id}
+                  id={`lang-tab-${l.id}`}
+                  aria-controls={`lang-panel-${l.id}`}
+                  label={
+                    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                      {l.name}
+                      <TabStatus language={l} complete={complete} errorCount={errorCount} />
+                    </Box>
+                  }
+                />
+              );
+            })}
+          </Tabs>
+          {languages.map((l) => {
+            const t = form.translations[l.id];
+            return (
+              <Box
+                key={l.id}
+                role="tabpanel"
+                id={`lang-panel-${l.id}`}
+                aria-labelledby={`lang-tab-${l.id}`}
+                hidden={activeLang !== l.id}
+                sx={{ display: activeLang === l.id ? 'flex' : 'none', flexDirection: 'column', gap: 3 }}
+              >
+                <FormField
+                  id={`tour-title-${l.id}`}
+                  label={`Título (${l.name})`}
+                  required
+                  counter={plural(t.title.length, 'carácter', 'caracteres')}
+                  value={t.title}
+                  onChange={(e) => setText(l.id, 'title', e.target.value)}
+                  help="Es lo que ven los viajeros en la web."
+                  error={errorOf(`tour-title-${l.id}`)}
+                />
+                <FormField
+                  id={`tour-description-${l.id}`}
+                  label={`Descripción (${l.name})`}
+                  required
+                  multiline
+                  minRows={4}
+                  counter={plural(t.description.length, 'carácter', 'caracteres')}
+                  value={t.description}
+                  onChange={(e) => setText(l.id, 'description', e.target.value)}
+                  help="Cuenta qué incluye y qué vivirá el viajero."
+                  error={errorOf(`tour-description-${l.id}`)}
+                />
+              </Box>
+            );
+          })}
+        </Box>
+      </Box>
+
+      <Box
+        component="aside"
+        aria-label="Foto, visibilidad y guardado"
+        sx={{ gridColumn: { lg: 2 }, gridRow: { lg: '2 / span 2' }, position: { lg: 'sticky' }, top: 32, display: { xs: 'contents', lg: 'flex' }, flexDirection: 'column', gap: 2 }}
+      >
+        <Box component="section" aria-labelledby="photo-title" sx={{ ...card, p: '15px', order: { xs: 2, lg: 0 } }}>
+          <Typography id="photo-title" variant="h2" component="h2" sx={{ mb: 1.5 }}>Foto</Typography>
+          <PhotoField compact={stacked} value={form.img} savedValue={baseline.img} onChange={(url) => setField('img', url)} onUploadingChange={setUploading} />
+        </Box>
+
+        <Box component="label" htmlFor="tour-isActive" sx={{ ...card, p: '15px', order: { xs: 3, lg: 0 }, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, cursor: 'pointer' }}>
+          <Box>
+            <Typography id="active-title" variant="subtitle2" component="span" sx={{ display: 'block', color: 'text.primary', fontSize: 15, fontWeight: 600 }}>Visible en la web</Typography>
+            <Typography id="active-help" variant="caption" color="text.secondary" component="span" sx={{ display: 'block' }}>
+              {form.isActive ? 'Los viajeros ven este tour.' : 'Oculto: los viajeros no lo ven.'}
+            </Typography>
+          </Box>
+          <Switch
+            checked={form.isActive}
+            onChange={(e) => setField('isActive', e.target.checked)}
+            slotProps={{ input: { id: 'tour-isActive', role: 'switch', 'aria-labelledby': 'active-title', 'aria-describedby': 'active-help' } }}
+          />
+        </Box>
+
+        {!stacked && (
+          <>
+            {saveButton}
+            {saveNote}
+          </>
+        )}
+      </Box>
+
+      {stacked && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 0,
+            left: { xs: 0, md: 232 },
+            right: 0,
+            height: 88,
+            zIndex: (t) => t.zIndex.appBar,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: '6px',
+            px: 2,
+            bgcolor: 'bg.surface',
+            borderTop: '1px solid',
+            borderColor: 'border.subtle',
+          }}
+        >
+          {saveNote}
+          {saveButton}
+        </Box>
+      )}
+
+      <ConfirmDialog
+        open={blocker.state === 'blocked'}
+        title="¿Salir sin guardar?"
+        cancelLabel="Seguir editando"
+        confirmLabel="Salir y descartar"
+        destructive
+        safePrimary
+        onConfirm={() => blocker.proceed()}
+        onClose={() => blocker.reset()}
+      >
+        <span style={{ display: 'block' }}>Tienes cambios sin guardar en «{title}».</span>
+        <span style={{ display: 'block' }}>Si sales ahora, se pierden.</span>
+      </ConfirmDialog>
+    </Box>
+  );
 }
 
 export default function TourEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const isNew = !id || id === 'new';
-  const [activeLang, setActiveLang] = useState('es');
+  const { state } = useLocation();
+  const isNew = id === undefined;
+  const validId = isNew || ID_RE.test(id);
 
-  const [form, setForm] = useState({
-    adminTitle: '',
-    price: '',
-    location: '',
-    duration: '',
-    img: '',
-    isActive: true,
-    categoryId: '',
-    translations: [],
-  });
-
-  const { data: tour, isLoading } = useQuery({
+  // gcTime 0: al volver a un tour siempre se pide fresco; el formulario se llena una sola vez con lo que llega.
+  const tourQ = useQuery({
     queryKey: ['tour', id],
     queryFn: () => fetchTour(id),
-    enabled: !isNew
+    enabled: !isNew && validId,
+    gcTime: 0,
+    retry: (count, err) => err?.response?.status !== 404 && count < 1,
   });
+  const categoriesQ = useQuery({ queryKey: ['categories'], queryFn: fetchCategories });
+  const languagesQ = useQuery({ queryKey: ['languages'], queryFn: fetchLanguages });
 
-  const { data: categories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: fetchCategories
-  });
+  const notFound = (
+    <Box>
+      <Crumbs />
+      <Box sx={{ mt: 3 }}>
+        <NotFound
+          title="Este tour no existe o se eliminó."
+          description="Puede que el enlace esté incompleto o que alguien lo haya borrado."
+          action={{ label: 'Ir a la lista', onClick: () => navigate('/tours') }}
+        />
+      </Box>
+    </Box>
+  );
 
-  const { data: languages } = useQuery({
-    queryKey: ['languages'],
-    queryFn: fetchLanguages
-  });
+  if (!validId) return notFound;
+  if (tourQ.error?.response?.status === 404) return notFound;
 
-  useEffect(() => {
-    if (tour) {
-      setForm({
-        adminTitle: tour.adminTitle || '',
-        price: tour.price?.toString() || '',
-        location: tour.location || '',
-        duration: tour.duration?.toString() || '60',
-        img: tour.img || '',
-        isActive: tour.isActive ?? true,
-        categoryId: tour.categoryId?.toString() || '',
-        translations: tour.translations || [],
-      });
-    }
-  }, [tour]);
-
-  useEffect(() => {
-    // Initialize translations for all languages if new tour
-    if (isNew && languages?.length > 0 && form.translations.length === 0) {
-      setForm(prev => ({
-        ...prev,
-        translations: languages.map(lang => ({
-          languageId: lang.id,
-          title: '',
-          description: '',
-        })),
-      }));
-    }
-  }, [isNew, languages, form.translations.length]);
-
-  const mutation = useMutation({
-    mutationFn: isNew ? createTour : (data) => updateTour({ id, data }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tours'] });
-      navigate('/tours');
-    },
-    onError: (error) => {
-      console.error('Error saving tour:', error);
-      alert('Error al guardar: ' + (error.response?.data?.message || error.message));
-    },
-  });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const payload = {
-      adminTitle: form.adminTitle,
-      price: parseFloat(form.price) || 0,
-      location: form.location,
-      duration: parseInt(form.duration) || 60,
-      img: form.img || null,
-      isActive: form.isActive,
-      categoryId: parseInt(form.categoryId) || null,
-      translations: form.translations.map(t => ({
-        languageId: t.languageId,
-        title: t.title,
-        description: t.description,
-      })),
-    };
-    mutation.mutate(payload);
-  };
-
-  const handleChange = (field, value) => {
-    setForm(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleTranslationChange = (languageId, field, value) => {
-    setForm(prev => ({
-      ...prev,
-      translations: prev.translations.map(t =>
-        t.languageId === languageId ? { ...t, [field]: value } : t
-      ),
-    }));
-  };
-
-  if (!isNew && isLoading) return <Typography sx={{ color: '#A0A0A0' }}>Cargando...</Typography>;
+  const failed = [tourQ, categoriesQ, languagesQ].filter((q) => q.isError);
+  if (failed.length) {
+    return (
+      <ErrorState
+        title="No pudimos cargar el tour."
+        description="Revisa tu conexión e intenta de nuevo."
+        onRetry={() => failed.forEach((q) => q.refetch())}
+      />
+    );
+  }
+  if ((!isNew && tourQ.isPending) || categoriesQ.isPending || languagesQ.isPending) return <FormSkeleton />;
+  if (!isNew && !tourQ.data) return notFound; // el API responde 200 con cuerpo vacío si el id no existe
 
   return (
-    <Box>
-      <form onSubmit={handleSubmit}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Button
-              startIcon={<ArrowBackIcon />}
-              onClick={() => navigate('/tours')}
-              sx={{ color: '#A0A0A0' }}
-            >
-              Volver
-            </Button>
-            <Typography variant="h4" sx={{ color: '#FAFAFA' }}>
-              {isNew ? 'Nuevo Tour' : 'Editar Tour'}
-            </Typography>
-          </Box>
-          <Button
-            type="submit"
-            variant="contained"
-            startIcon={<SaveIcon />}
-            disabled={mutation.isPending}
-            sx={{
-              backgroundColor: '#F4B942',
-              color: '#0A0A0A',
-              '&:hover': { backgroundColor: '#FFD166' },
-            }}
-          >
-            {mutation.isPending ? 'Guardando...' : 'Guardar'}
-          </Button>
-        </Box>
-        {/* Imagen */}
-        <Paper sx={{ p: 3, mb: 3, backgroundColor: '#141414', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <Typography variant="h6" sx={{ mb: 3, color: '#F4B942' }}>
-            Imagen
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-            <Button
-              variant="outlined"
-              component="label"
-              startIcon={<UploadIcon />}
-              sx={{ borderColor: '#F4B942', color: '#F4B942' }}
-            >
-              Subir Imagen
-              <input
-                type="file"
-                hidden
-                accept="image/*"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    // Use adminTitle as filename, fallback to timestamp
-                    const customName = form.adminTitle || `tour-${Date.now()}`;
-                    try {
-                      const result = await uploadImage(file, customName);
-                      handleChange('img', result.url);
-                    } catch (err) {
-                      console.error('Error uploading image:', err);
-                    }
-                  }
-                }}
-              />
-            </Button>
-            <Box sx={{ width: '100%', maxWidth: 400 }}>
-              {form.img ? (
-                <img
-                  src={getImageUrl(form.img)}
-                  alt="Preview"
-                  style={{ width: '100%', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)' }}
-                />
-              ) : (
-                <Box sx={{ width: '100%', height: 200, backgroundColor: '#1a1a1a', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Typography sx={{ color: '#666' }}>Sin imagen</Typography>
-                </Box>
-              )}
-            </Box>
-          </Box>
-        </Paper>
-
-        {/* Datos Generales */}
-        <Paper sx={{ p: 3, mb: 3, backgroundColor: '#141414', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <Typography variant="h6" sx={{ mb: 3, color: '#F4B942' }}>
-            Datos Generales
-          </Typography>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Nombre Admin (identificador)"
-                value={form.adminTitle}
-                onChange={(e) => handleChange('adminTitle', e.target.value)}
-                required
-                placeholder="ej: Snorkel & Buceo"
-                sx={{
-                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                  '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                select
-                label="Categoría"
-                value={form.categoryId}
-                onChange={(e) => handleChange('categoryId', e.target.value)}
-                required
-                sx={{
-                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                  '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                }}
-              >
-                {categories?.map(cat => (
-                  <MenuItem key={cat.id} value={cat.id}>
-                    {cat.adminName}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Ubicación"
-                value={form.location}
-                onChange={(e) => handleChange('location', e.target.value)}
-                required
-                placeholder="ej: Cancún, México"
-                sx={{
-                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                  '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Duración (minutos)"
-                type="number"
-                value={form.duration}
-                onChange={(e) => handleChange('duration', e.target.value)}
-                required
-                sx={{
-                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                  '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Precio (MXN)"
-                type="number"
-                value={form.price}
-                onChange={(e) => handleChange('price', e.target.value)}
-                required
-                sx={{
-                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                  '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                }}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={form.isActive}
-                    onChange={(e) => handleChange('isActive', e.target.checked)}
-                    sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#F4B942' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#F4B942' } }}
-                  />
-                }
-                label={<Typography sx={{ color: '#A0A0A0' }}>Tour Activo</Typography>}
-              />
-            </Grid>
-          </Grid>
-        </Paper>
-
-        {/* Traducciones */}
-        <Paper sx={{ mb: 3, backgroundColor: '#141414', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <Tabs
-            value={activeLang}
-            onChange={(_, v) => setActiveLang(v)}
-            sx={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}
-          >
-            {languages?.map(lang => (
-              <Tab
-                key={lang.id}
-                label={lang.name}
-                value={lang.code}
-                sx={{ color: activeLang === lang.code ? '#F4B942' : '#A0A0A0' }}
-              />
-            ))}
-          </Tabs>
-          <Box sx={{ p: 3 }}>
-            {languages?.map(language => {
-              const translation = form.translations.find(t => t.languageId === language.id);
-              return (
-                <Box key={language.id} sx={{ display: activeLang === language.code ? 'block' : 'none' }}>
-                  <Grid container spacing={2}>
-                    <Grid item xs={12}>
-                      <TextField
-                        fullWidth
-                        label="Título"
-                        value={translation?.title || ''}
-                        onChange={(e) => handleTranslationChange(language.id, 'title', e.target.value)}
-                        required
-                        sx={{
-                          '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                          '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                          '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                        }}
-                      />
-                    </Grid>
-                    <Grid item xs={12}>
-                      <TextField
-                        fullWidth
-                        multiline
-                        rows={4}
-                        label="Descripción"
-                        value={translation?.description || ''}
-                        onChange={(e) => handleTranslationChange(language.id, 'description', e.target.value)}
-                        required
-                        sx={{
-                          '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                          '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                          '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                        }}
-                      />
-                    </Grid>
-                  </Grid>
-                </Box>
-              );
-            })}
-          </Box>
-        </Paper>
-      </form>
-    </Box>
+    <TourForm
+      key={id ?? 'new'}
+      tour={isNew ? null : tourQ.data}
+      categories={categoriesQ.data}
+      languages={languagesQ.data}
+      savedFlag={!!state?.saved}
+    />
   );
 }

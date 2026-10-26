@@ -1,410 +1,186 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Box,
-  Typography,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Button,
-  Chip,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Collapse,
-  TablePagination,
-} from '@mui/material';
-import { Edit as EditIcon, Add as AddIcon, Delete as DeleteIcon, KeyboardArrowDown as KeyboardArrowDownIcon, KeyboardArrowUp as KeyboardArrowUpIcon } from '@mui/icons-material';
-import { useState } from 'react';
-import api from '../../lib/api';
+import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
+import { Box, Button, Chip, IconButton, Link, Typography } from '@mui/material';
+import Close from '@mui/icons-material/Close';
+import DeleteOutline from '@mui/icons-material/DeleteOutline';
+import EditOutlined from '@mui/icons-material/EditOutlined';
+import api, { errorMessage } from '../../lib/api';
+import { categoryHasPendingTranslations, categoryLanguageStatus } from '../../lib/catalog';
+import { joinList, plural } from '../../lib/langLabel';
+import { useToasts } from '../../lib/useToasts';
+import { useIsMobile } from '../../lib/useIsMobile';
+import { numeric } from '../../theme';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import DataTable from '../../components/DataTable';
+import LangChips from '../../components/LangChips';
+import PageHeader from '../../components/PageHeader';
+import { EmptyState, ErrorState, SkeletonRows } from '../../components/States';
+import CategoryPanel from './CategoryPanel';
 
-async function fetchCategories() {
-  const { data } = await api.get(`/categories`);
-  return data;
-}
+const get = (url) => async () => (await api.get(url)).data;
 
-async function fetchLanguages() {
-  const { data } = await api.get(`/languages`);
-  return data;
-}
-
-async function createCategory(category) {
-  const { data } = await api.post(`/categories`, category);
-  return data;
-}
-
-async function updateCategory({ id, ...category }) {
-  const { data } = await api.patch(`/categories/${id}`, category);
-  return data;
-}
-
-async function deleteCategory(id) {
-  await api.delete(`/categories/${id}`);
-}
-
-async function updateCategoryTranslation({ categoryId, languageId, data }) {
-  const { result } = await api.patch(`/categories/${categoryId}/translations/${languageId}`, data);
-  return result;
-}
-
-async function createCategoryTranslation({ categoryId, data }) {
-  const { data: result } = await api.post(`/categories/${categoryId}/translations`, data);
-  return result;
+// Nombre y descripción visibles: los del español, o los datos internos si falta la traducción.
+function labels(category, languages) {
+  const es = languages.find((l) => l.code === 'es');
+  const t = category.translations?.find((x) => x.languageId === es?.id);
+  return { name: t?.name?.trim() || category.adminName, description: t?.description?.trim() || category.description };
 }
 
 export default function CategoryList() {
   const queryClient = useQueryClient();
-  const { data: categories, isLoading, error, isFetching } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories });
-  const { data: languages } = useQuery({ queryKey: ['languages'], queryFn: fetchLanguages });
-  
-  const [openDialog, setOpenDialog] = useState(false);
-  const [editingCategory, setEditingCategory] = useState(null);
-  const [formData, setFormData] = useState({ adminName: '', description: '' });
-  const [expandedRows, setExpandedRows] = useState({});
-  const [translationEdits, setTranslationEdits] = useState({});
+  const toasts = useToasts();
+  const mobile = useIsMobile();
+  const [params, setParams] = useSearchParams();
+  const pendingOnly = params.get('pendientes') === '1';
 
-  const createMutation = useMutation({
-    mutationFn: createCategory,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
-      handleCloseDialog();
-    },
-    onError: (error) => {
-      console.error('Error creating category:', error);
-      alert('Error al crear categoría: ' + (error.response?.data?.message || error.message));
-    },
-  });
+  const categoriesQ = useQuery({ queryKey: ['categories'], queryFn: get('/categories') });
+  const languagesQ = useQuery({ queryKey: ['languages'], queryFn: get('/languages') });
+  const queries = [categoriesQ, languagesQ];
+  const loading = queries.some((q) => q.isLoading);
+  const failed = !loading && queries.some((q) => q.isError);
 
-  const updateMutation = useMutation({
-    mutationFn: updateCategory,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
-      handleCloseDialog();
-    },
-    onError: (error) => {
-      console.error('Error updating category:', error);
-      alert('Error al actualizar categoría: ' + (error.response?.data?.message || error.message));
-    },
-  });
+  const [panel, setPanel] = useState(null); // { category } (null = nueva)
+  const [removing, setRemoving] = useState(null); // { category, blockedCount? }
+  const [highlightId, setHighlightId] = useState(null);
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteCategory,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
-    },
-    onError: (error) => {
-      console.error('Error deleting category:', error);
-      alert('Error al eliminar categoría: ' + (error.response?.data?.message || error.message));
-    },
-  });
+  useEffect(() => {
+    if (highlightId == null) return undefined;
+    const timer = setTimeout(() => setHighlightId(null), 2000);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
 
-  const handleOpenDialog = (category = null) => {
-    if (category) {
-      setEditingCategory(category);
-      setFormData({ adminName: category.adminName, description: category.description });
-    } else {
-      setEditingCategory(null);
-      setFormData({ adminName: '', description: '' });
-    }
-    setOpenDialog(true);
+  const closePanel = () => setPanel(null);
+  const saved = (id) => {
+    setPanel(null);
+    setHighlightId(id);
   };
 
-  const handleCloseDialog = () => {
-    setOpenDialog(false);
-    setEditingCategory(null);
-    setFormData({ adminName: '', description: '' });
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editingCategory) {
-      updateMutation.mutate({ id: editingCategory.id, ...formData });
-    } else {
-      createMutation.mutate(formData);
-    }
-  };
-
-  const handleDelete = (id) => {
-    if (window.confirm('¿Estás seguro de eliminar esta categoría?')) {
-      deleteMutation.mutate(id);
-    }
-  };
-
-  const toggleRow = (id) => {
-    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  // Get translations for a category
-  const getTranslations = (category) => {
-    return category.translations || [];
-  };
-
-  // Get translation for a specific language
-  const getTranslation = (category, languageId) => {
-    return category.translations?.find(t => t.languageId === languageId);
-  };
-
-  // Handle translation field change
-  const handleTranslationChange = (categoryId, languageId, field, value) => {
-    setTranslationEdits(prev => ({
-      ...prev,
-      [`${categoryId}-${languageId}`]: {
-        ...prev[`${categoryId}-${languageId}`],
-        [field]: value,
-      }
-    }));
-  };
-
-  // Save translation
-  const handleSaveTranslation = async (categoryId, languageId) => {
-    const editKey = `${categoryId}-${languageId}`;
-    const editData = translationEdits[editKey];
-    if (!editData) return;
-
+  async function remove(category) {
+    const { name } = labels(category, languagesQ.data);
+    setRemoving(null);
     try {
-      // Check if translation exists
-      const existingTranslation = translationEdits[editKey]?.id;
-      
-      if (existingTranslation) {
-        await api.patch(`/categories/${categoryId}/translations/${languageId}`, editData);
-      } else {
-        await api.post(`/categories/${categoryId}/translations`, {
-          languageId,
-          ...editData
-        });
-      }
-      
+      await api.delete(`/categories/${category.id}`);
+      toasts.success(`Categoría «${name}» eliminada`);
       queryClient.invalidateQueries({ queryKey: ['categories'] });
-      setTranslationEdits(prev => {
-        const newEdits = { ...prev };
-        delete newEdits[editKey];
-        return newEdits;
-      });
-    } catch (error) {
-      console.error('Error saving translation:', error);
-      alert('Error al guardar traducción: ' + (error.response?.data?.message || error.message));
+    } catch (err) {
+      // Datos viejos en pantalla: la API dice cuántos tours tiene (D-1) y se refresca la lista.
+      if (err.response?.status === 409 && err.response.data?.code === 'CATEGORY_HAS_TOURS') {
+        setRemoving({ category, blockedCount: err.response.data.tourCount });
+        queryClient.invalidateQueries({ queryKey: ['categories'] });
+        return;
+      }
+      toasts.error(`No pudimos eliminar «${name}». ${errorMessage(err)}`, { action: { label: 'Reintentar', onClick: () => remove(category) } });
     }
-  };
+  }
 
-  if (isLoading) return <Typography sx={{ color: '#A0A0A0' }}>Cargando categorías...</Typography>;
-  if (error) return <Typography color="error">Error al cargar categorías</Typography>;
+  const askRemove = (category) => setRemoving({ category, blockedCount: category._count?.tours > 0 ? category._count.tours : 0 });
+
+  const ready = !loading && !failed;
+  const all = ready ? categoriesQ.data : [];
+  const languages = ready ? languagesQ.data : [];
+  const rows = pendingOnly ? all.filter((c) => categoryHasPendingTranslations(c, languages)) : all;
+  const clearFilter = () => setParams({}, { replace: true });
+
+  let body;
+  if (loading) body = <SkeletonRows count={8} />;
+  else if (failed) body = <ErrorState title="No pudimos cargar las categorías." onRetry={() => queries.forEach((q) => q.isError && q.refetch())} />;
+  else if (all.length === 0) {
+    body = <EmptyState icon={null} title="Aún no hay categorías." description="Crea la primera para organizar tus tours." action={{ label: 'Crear la primera', onClick: () => setPanel({ category: null }) }} />;
+  } else if (rows.length === 0) {
+    body = <EmptyState icon={null} title="Ninguna categoría tiene pendientes." description="Todas tienen su nombre y descripción en los idiomas activos." action={{ label: 'Quitar filtros', variant: 'outlined', onClick: clearFilter }} />;
+  } else {
+    const actions = (c) => {
+      const { name } = labels(c, languages);
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }} onClick={(e) => e.stopPropagation()}>
+          <IconButton aria-label={`Editar «${name}»`} onClick={() => setPanel({ category: c })}><EditOutlined /></IconButton>
+          <IconButton aria-label={`Eliminar «${name}»`} onClick={() => askRemove(c)}><DeleteOutline /></IconButton>
+        </Box>
+      );
+    };
+    const nameCell = (c) => {
+      const { name } = labels(c, languages);
+      return (
+        <Box sx={{ minWidth: 0 }}>
+          <Typography noWrap sx={{ fontSize: 14, fontWeight: 600, lineHeight: '20px' }}>{name}</Typography>
+          <Typography noWrap variant="caption" color="text.secondary" component="p">{c.adminName}</Typography>
+        </Box>
+      );
+    };
+    body = (
+      <DataTable
+        label="Categorías"
+        mobile={mobile}
+        rows={rows}
+        getKey={(c) => c.id}
+        highlightId={highlightId}
+        onRowClick={(c) => setPanel({ category: c })}
+        columns={[
+          { key: 'name', label: 'Categoría', width: 240, render: nameCell },
+          { key: 'description', label: 'Descripción', render: (c) => <Typography noWrap variant="body2" color="text.secondary" title={labels(c, languages).description}>{labels(c, languages).description}</Typography> },
+          { key: 'tours', label: 'Tours', width: 80, align: 'right', render: (c) => <Typography sx={{ fontSize: 14, ...numeric }}>{c._count?.tours ?? 0}</Typography> },
+          { key: 'languages', label: 'Idiomas', width: 200, render: (c) => <Box sx={{ pl: 2 }}><LangChips status={categoryLanguageStatus(c, languages)} highlighted={highlightId === c.id} /></Box> },
+          { key: 'actions', label: 'Acciones', srOnly: true, width: 112, render: actions },
+        ]}
+        renderCard={(c) => (
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+              <Box sx={{ minWidth: 0 }}>
+                {nameCell(c)}
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{labels(c, languages).description}</Typography>
+              </Box>
+              {actions(c)}
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+              <Typography variant="body2" sx={numeric}>{c._count?.tours ?? 0} {plural(c._count?.tours ?? 0, 'tour', 'tours')}</Typography>
+              <LangChips status={categoryLanguageStatus(c, languages)} highlighted={highlightId === c.id} />
+            </Box>
+          </Box>
+        )}
+      />
+    );
+  }
+
+  const count = ready && all.length > 0 ? (pendingOnly ? `${rows.length} de ${all.length} categorías` : `${all.length} ${plural(all.length, 'categoría', 'categorías')}`) : null;
+  const header = <PageHeader title="Categorías" subtitle={count} action={ready && all.length > 0 ? { label: 'Nueva categoría', mobileLabel: 'Nueva', onClick: () => setPanel({ category: null }) } : null} />;
+
+  const removed = removing?.category;
+  const removedName = removed && languages.length ? labels(removed, languages).name : removed?.adminName;
+  const translated = removed ? joinList((removed.translations || []).map((t) => t.language?.name || languages.find((l) => l.id === t.languageId)?.name).filter(Boolean)) : '';
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ color: '#FAFAFA' }}>
-          Categorías
-          {isFetching && <Typography component="span" sx={{ ml: 2, color: '#A0A0A0', fontSize: '0.8rem' }}>Actualizando...</Typography>}
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenDialog()}
-          sx={{
-            backgroundColor: '#F4B942',
-            color: '#0A0A0A',
-            '&:hover': { backgroundColor: '#FFD166' },
-          }}
-        >
-          Nueva Categoría
-        </Button>
-      </Box>
+      {header}
+      {pendingOnly && ready && all.length > 0 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Chip variant="outlined" label="Con pendientes" onClick={clearFilter} onDelete={clearFilter} deleteIcon={<Close />} aria-label="Quitar filtro Con pendientes" sx={{ height: 28, borderColor: 'border.control' }} />
+          <Button variant="text" onClick={clearFilter}>Quitar filtros</Button>
+        </Box>
+      )}
+      {body}
 
-      <TableContainer component={Paper} sx={{ backgroundColor: '#141414', border: '1px solid rgba(255,255,255,0.1)' }}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ width: 40, color: '#A0A0A0' }} />
-              <TableCell sx={{ color: '#A0A0A0' }}>Nombre Admin</TableCell>
-              <TableCell sx={{ color: '#A0A0A0' }}>Descripción</TableCell>
-              <TableCell sx={{ color: '#A0A0A0' }}>Tours</TableCell>
-              <TableCell sx={{ color: '#A0A0A0' }}>Acciones</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {categories?.map((category) => (
-              <>
-                <TableRow 
-                  key={category.id} 
-                  sx={{ '&:hover': { backgroundColor: 'rgba(244, 185, 66, 0.05)' } }}
-                >
-                  <TableCell>
-                    <IconButton size="small" onClick={() => toggleRow(category.id)}>
-                      {expandedRows[category.id] ? (
-                        <KeyboardArrowUpIcon sx={{ color: '#888' }} />
-                      ) : (
-                        <KeyboardArrowDownIcon sx={{ color: '#888' }} />
-                      )}
-                    </IconButton>
-                  </TableCell>
-                  <TableCell sx={{ color: '#F4B942', fontFamily: 'monospace' }}>
-                    {category.adminName}
-                  </TableCell>
-                  <TableCell sx={{ color: '#FAFAFA' }}>
-                    {category.description}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={category._count?.tours || 0}
-                      size="small"
-                      sx={{
-                        backgroundColor: 'rgba(244, 185, 66, 0.2)',
-                        color: '#F4B942',
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <IconButton onClick={() => handleOpenDialog(category)}>
-                      <EditIcon sx={{ color: '#888' }} />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(category.id)}>
-                      <DeleteIcon sx={{ color: '#888' }} />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell colSpan={5} sx={{ py: 0, backgroundColor: '#1a1a1a' }}>
-                    <Collapse in={expandedRows[category.id]} timeout="auto">
-                      <Box sx={{ py: 2, px: 4 }}>
-                        <Typography variant="subtitle2" sx={{ color: '#A0A0A0', mb: 2 }}>
-                          Traducciones
-                        </Typography>
-                        {languages?.map((language) => {
-                          const translation = category.translations?.find(t => t.languageId === language.id);
-                          const editKey = `${category.id}-${language.id}`;
-                          const isEditing = translationEdits[editKey] !== undefined;
-                          const name = isEditing ? translationEdits[editKey].name : translation?.name || '';
-                          const desc = isEditing ? translationEdits[editKey].description : translation?.description || '';
-                          const hasChanges = isEditing && (translationEdits[editKey].name !== (translation?.name || '') || translationEdits[editKey].description !== (translation?.description || ''));
-                          
-                          // Initialize edit state when row expands
-                          const initEdit = () => {
-                            if (!translationEdits[editKey]) {
-                              setTranslationEdits(prev => ({
-                                ...prev,
-                                [editKey]: {
-                                  name: translation?.name || '',
-                                  description: translation?.description || '',
-                                }
-                              }));
-                            }
-                          };
-                          
-                          return (
-                            <Box key={language.id} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
-                              <Chip
-                                label={language.code.toUpperCase()}
-                                size="small"
-                                sx={{ minWidth: 50, backgroundColor: 'rgba(255,255,255,0.1)', color: '#FAFAFA' }}
-                              />
-                              <TextField
-                                size="small"
-                                placeholder="Nombre"
-                                value={name}
-                                onFocus={initEdit}
-                                onChange={(e) => handleTranslationChange(category.id, language.id, 'name', e.target.value)}
-                                sx={{
-                                  flex: 1,
-                                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                                }}
-                              />
-                              <TextField
-                                size="small"
-                                placeholder="Descripción"
-                                value={desc}
-                                onFocus={initEdit}
-                                onChange={(e) => handleTranslationChange(category.id, language.id, 'description', e.target.value)}
-                                sx={{
-                                  flex: 2,
-                                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                                }}
-                              />
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                onClick={() => handleSaveTranslation(category.id, language.id)}
-                                disabled={!hasChanges}
-                                sx={{
-                                  borderColor: hasChanges ? '#F4B942' : 'rgba(255,255,255,0.2)',
-                                  color: hasChanges ? '#F4B942' : '#888',
-                                  '&:hover': { borderColor: '#FFD166', backgroundColor: 'rgba(244, 185, 66, 0.1)' }
-                                }}
-                              >
-                                Guardar
-                              </Button>
-                            </Box>
-                          );
-                        })}
-                      </Box>
-                    </Collapse>
-                  </TableCell>
-                </TableRow>
-              </>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      {panel && ready && (
+        <CategoryPanel key={panel.category?.id ?? 'nueva'} category={panel.category} categories={all} languages={languages} onClose={closePanel} onSaved={saved} />
+      )}
 
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <form onSubmit={handleSubmit}>
-          <DialogTitle sx={{ backgroundColor: '#141414', color: '#FAFAFA' }}>
-            {editingCategory ? 'Editar Categoría' : 'Nueva Categoría'}
-          </DialogTitle>
-          <DialogContent sx={{ backgroundColor: '#141414' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-              <TextField
-                label="Nombre Admin (identificador)"
-                value={formData.adminName}
-                onChange={(e) => setFormData({ ...formData, adminName: e.target.value })}
-                required
-                placeholder="ej: snorkel, fishing, adventure"
-                sx={{
-                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                  '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                }}
-              />
-              <TextField
-                label="Descripción"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                required
-                multiline
-                rows={2}
-                sx={{
-                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                  '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                }}
-              />
-            </Box>
-          </DialogContent>
-          <DialogActions sx={{ backgroundColor: '#141414', px: 3, pb: 2 }}>
-            <Button onClick={handleCloseDialog} sx={{ color: '#A0A0A0' }}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              sx={{
-                backgroundColor: '#F4B942',
-                color: '#0A0A0A',
-                '&:hover': { backgroundColor: '#FFD166' },
-              }}
-            >
-              {editingCategory ? 'Guardar' : 'Crear'}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
+      {removed && removing.blockedCount > 0 && (
+        <ConfirmDialog open title={`No se puede eliminar «${removedName}»`} cancelLabel="Entendido" onClose={() => setRemoving(null)}>
+          <span style={{ display: 'block' }}>
+            «{removedName}» tiene {removing.blockedCount} {plural(removing.blockedCount, 'tour', 'tours')}. Muévelos a otra categoría antes de eliminarla.
+          </span>
+          <span style={{ display: 'block' }}>Así no se borra ningún tour por accidente.</span>
+          <Link component={RouterLink} to={`/tours?categoria=${removed.id}`} sx={{ display: 'inline-block', mt: 1.5, fontWeight: 600 }}>
+            Ver {removing.blockedCount === 1 ? 'su tour' : `sus ${removing.blockedCount} tours`}
+          </Link>
+        </ConfirmDialog>
+      )}
+      {removed && !removing.blockedCount && (
+        <ConfirmDialog open title={`¿Eliminar la categoría «${removedName}»?`} confirmLabel="Eliminar" destructive onConfirm={() => remove(removed)} onClose={() => setRemoving(null)}>
+          <span style={{ display: 'block' }}>Esta categoría no tiene tours.{translated ? ` Se borrará con sus traducciones (${translated}).` : ''}</span>
+          <span style={{ display: 'block' }}>Esta acción no se puede deshacer.</span>
+        </ConfirmDialog>
+      )}
     </Box>
   );
 }

@@ -1,241 +1,143 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Box,
-  Typography,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Button,
-  Chip,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Switch,
-  FormControlLabel,
-} from '@mui/material';
-import { Edit as EditIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useState } from 'react';
-import api from '../../lib/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Box, Chip, IconButton, Typography } from '@mui/material';
+import Check from '@mui/icons-material/Check';
+import DeleteOutline from '@mui/icons-material/DeleteOutline';
+import EditOutlined from '@mui/icons-material/EditOutlined';
+import api, { errorMessage } from '../../lib/api';
+import { activeLanguages, isProtectedLanguage, textsByLanguage } from '../../lib/catalog';
+import { plural } from '../../lib/langLabel';
+import { useToasts } from '../../lib/useToasts';
+import { useIsMobile } from '../../lib/useIsMobile';
+import { numeric } from '../../theme';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import DataTable from '../../components/DataTable';
+import PageHeader from '../../components/PageHeader';
+import { ErrorState, SkeletonRows } from '../../components/States';
+import LanguagePanel from './LanguagePanel';
 
-async function fetchLanguages() {
-  const { data } = await api.get(`/languages`);
-  return data;
-}
+const get = (url) => async () => (await api.get(url)).data;
 
-async function createLanguage(language) {
-  const { data } = await api.post(`/languages`, language);
-  return data;
-}
-
-async function updateLanguage({ id, ...language }) {
-  const { data } = await api.patch(`/languages/${id}`, language);
-  return data;
-}
-
-async function deleteLanguage(id) {
-  await api.delete(`/languages/${id}`);
+function StatusChip({ active }) {
+  return active ? (
+    <Chip size="small" icon={<Check />} label="Activo" sx={{ bgcolor: 'statusBg.success', color: 'success.main' }} />
+  ) : (
+    <Chip size="small" label="Inactivo" sx={{ bgcolor: 'neutral.chip', color: 'text.secondary' }} />
+  );
 }
 
 export default function LanguageList() {
   const queryClient = useQueryClient();
-  const { data: languages, isLoading, error } = useQuery({ queryKey: ['languages'], queryFn: fetchLanguages });
-  
-  const [openDialog, setOpenDialog] = useState(false);
-  const [editingLanguage, setEditingLanguage] = useState(null);
-  const [formData, setFormData] = useState({ code: '', name: '', isActive: true });
+  const toasts = useToasts();
+  const mobile = useIsMobile();
+  const languagesQ = useQuery({ queryKey: ['languages'], queryFn: get('/languages') });
+  const toursQ = useQuery({ queryKey: ['tours'], queryFn: get('/tours/all') });
+  const categoriesQ = useQuery({ queryKey: ['categories'], queryFn: get('/categories') });
+  const queries = [languagesQ, toursQ, categoriesQ];
+  const loading = queries.some((q) => q.isLoading);
+  const failed = !loading && queries.some((q) => q.isError);
+  const ready = !loading && !failed;
 
-  const createMutation = useMutation({
-    mutationFn: createLanguage,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['languages'] });
-      handleCloseDialog();
-    },
-  });
+  const [panel, setPanel] = useState(null); // { language } (null = nuevo)
+  const [removing, setRemoving] = useState(null);
 
-  const updateMutation = useMutation({
-    mutationFn: updateLanguage,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['languages'] });
-      handleCloseDialog();
-    },
-  });
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteLanguage,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['languages'] });
-    },
-  });
-
-  const handleOpenDialog = (language = null) => {
-    if (language) {
-      setEditingLanguage(language);
-      setFormData({ code: language.code, name: language.name, isActive: language.isActive });
-    } else {
-      setEditingLanguage(null);
-      setFormData({ code: '', name: '', isActive: true });
+  async function remove(language) {
+    setRemoving(null);
+    try {
+      await api.delete(`/languages/${language.id}`);
+      toasts.success(`Idioma «${language.name}» eliminado`);
+      ['languages', 'tours', 'categories'].forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }));
+    } catch (err) {
+      // 409 LANGUAGE_PROTECTED: el mensaje de la API ya lo explica; el aviso persiste hasta cerrarlo.
+      toasts.error(
+        errorMessage(err),
+        err.response?.status === 409 ? {} : { action: { label: 'Reintentar', onClick: () => remove(language) } },
+      );
     }
-    setOpenDialog(true);
-  };
+  }
 
-  const handleCloseDialog = () => {
-    setOpenDialog(false);
-    setEditingLanguage(null);
-    setFormData({ code: '', name: '', isActive: true });
-  };
+  const languages = ready ? languagesQ.data : [];
+  const tours = ready ? toursQ.data : [];
+  const categories = ready ? categoriesQ.data : [];
+  const counts = (l) => textsByLanguage(l.id, tours, categories);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editingLanguage) {
-      updateMutation.mutate({ id: editingLanguage.id, ...formData });
-    } else {
-      createMutation.mutate(formData);
-    }
-  };
+  let body;
+  if (loading) body = <SkeletonRows count={4} />;
+  else if (failed) body = <ErrorState title="No pudimos cargar los idiomas." onRetry={() => queries.forEach((q) => q.isError && q.refetch())} />;
+  else {
+    const actions = (l) => (
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }} onClick={(e) => e.stopPropagation()}>
+        {isProtectedLanguage(l) && <Chip size="small" label="Protegido" sx={{ bgcolor: 'neutral.chip', color: 'text.secondary', mr: 0.5 }} />}
+        <IconButton aria-label={`Editar «${l.name}»`} onClick={() => setPanel({ language: l })}><EditOutlined /></IconButton>
+        {!isProtectedLanguage(l) && <IconButton aria-label={`Eliminar «${l.name}»`} onClick={() => setRemoving(l)}><DeleteOutline /></IconButton>}
+      </Box>
+    );
+    const toursText = (l) => `${counts(l).tours} de ${tours.length}`;
+    const categoriesText = (l) => `${counts(l).categories} de ${categories.length}`;
+    body = (
+      <DataTable
+        label="Idiomas"
+        mobile={mobile}
+        rows={languages}
+        getKey={(l) => l.id}
+        onRowClick={(l) => setPanel({ language: l })}
+        columns={[
+          { key: 'name', label: 'Idioma', width: 240, render: (l) => <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{l.name}</Typography> },
+          { key: 'code', label: 'Código', width: 160, render: (l) => <Typography variant="body2" color="text.secondary">{l.code}</Typography> },
+          { key: 'status', label: 'Estado', width: 160, render: (l) => <StatusChip active={l.isActive} /> },
+          { key: 'tours', label: 'Textos de tours', align: 'right', render: (l) => <Typography sx={{ fontSize: 14, ...numeric }}>{toursText(l)}</Typography> },
+          { key: 'categories', label: 'Textos de categorías', align: 'right', render: (l) => <Typography sx={{ fontSize: 14, ...numeric }}>{categoriesText(l)}</Typography> },
+          { key: 'actions', label: 'Acciones', srOnly: true, width: 210, render: actions },
+        ]}
+        renderCard={(l) => (
+          <Box sx={{ display: 'grid', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', minWidth: 0 }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{l.name}</Typography>
+                <Typography variant="body2" color="text.secondary">{l.code}</Typography>
+                <StatusChip active={l.isActive} />
+              </Box>
+              {actions(l)}
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={numeric}>
+              Textos de tours: {toursText(l)} · de categorías: {categoriesText(l)}
+            </Typography>
+          </Box>
+        )}
+      />
+    );
+  }
 
-  const handleDelete = (id) => {
-    if (window.confirm('¿Estás seguro de eliminar este idioma?')) {
-      deleteMutation.mutate(id);
-    }
-  };
-
-  if (isLoading) return <Typography sx={{ color: '#A0A0A0' }}>Cargando idiomas...</Typography>;
-  if (error) return <Typography color="error">Error al cargar idiomas</Typography>;
+  const subtitle = ready ? `${languages.length} ${plural(languages.length, 'idioma', 'idiomas')} · ${activeLanguages(languages).length} ${plural(activeLanguages(languages).length, 'activo', 'activos')}` : null;
+  const removeCounts = removing ? counts(removing) : null;
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ color: '#FAFAFA' }}>
-          Idiomas
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenDialog()}
-          sx={{
-            backgroundColor: '#F4B942',
-            color: '#0A0A0A',
-            '&:hover': { backgroundColor: '#FFD166' },
-          }}
-        >
-          Nuevo Idioma
-        </Button>
-      </Box>
+      <PageHeader title="Idiomas" subtitle={subtitle} action={ready ? { label: 'Nuevo idioma', mobileLabel: 'Nuevo', onClick: () => setPanel({ language: null }) } : null} />
+      {body}
+      {ready && <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Español e inglés los usa la web: no se pueden eliminar ni cambiar su código.</Typography>}
 
-      <TableContainer component={Paper} sx={{ backgroundColor: '#141414', border: '1px solid rgba(255,255,255,0.1)' }}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ color: '#A0A0A0' }}>Código</TableCell>
-              <TableCell sx={{ color: '#A0A0A0' }}>Nombre</TableCell>
-              <TableCell sx={{ color: '#A0A0A0' }}>Estado</TableCell>
-              <TableCell sx={{ color: '#A0A0A0' }}>Acciones</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {languages?.map((language) => (
-              <TableRow key={language.id} sx={{ '&:hover': { backgroundColor: 'rgba(244, 185, 66, 0.05)' } }}>
-                <TableCell sx={{ color: '#F4B942', fontFamily: 'monospace' }}>
-                  {language.code.toUpperCase()}
-                </TableCell>
-                <TableCell sx={{ color: '#FAFAFA' }}>
-                  {language.name}
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    label={language.isActive ? 'Activo' : 'Inactivo'}
-                    size="small"
-                    sx={{
-                      backgroundColor: language.isActive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                      color: language.isActive ? '#22c55e' : '#ef4444',
-                    }}
-                  />
-                </TableCell>
-                <TableCell>
-                  <IconButton onClick={() => handleOpenDialog(language)}>
-                    <EditIcon sx={{ color: '#888' }} />
-                  </IconButton>
-                  <IconButton onClick={() => handleDelete(language.id)}>
-                    <DeleteIcon sx={{ color: '#888' }} />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      {panel && ready && (
+        <LanguagePanel
+          key={panel.language?.id ?? 'nuevo'}
+          language={panel.language}
+          languages={languages}
+          tours={tours}
+          categories={categories}
+          onClose={() => setPanel(null)}
+          onSaved={() => setPanel(null)}
+        />
+      )}
 
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <form onSubmit={handleSubmit}>
-          <DialogTitle sx={{ backgroundColor: '#141414', color: '#FAFAFA' }}>
-            {editingLanguage ? 'Editar Idioma' : 'Nuevo Idioma'}
-          </DialogTitle>
-          <DialogContent sx={{ backgroundColor: '#141414' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-              <TextField
-                label="Código (ej. es, en, fr)"
-                value={formData.code}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value.toLowerCase() })}
-                required
-                inputProps={{ maxLength: 5 }}
-                sx={{
-                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                  '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                }}
-              />
-              <TextField
-                label="Nombre (ej. Español, English)"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                sx={{
-                  '& .MuiOutlinedInput-root': { color: '#FAFAFA' },
-                  '& .MuiInputLabel-root': { color: '#A0A0A0' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
-                }}
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.isActive}
-                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    sx={{
-                      '& .MuiSwitch-switchBase.Mui-checked': { color: '#F4B942' },
-                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#F4B942' },
-                    }}
-                  />
-                }
-                label="Activo"
-                sx={{ color: '#FAFAFA' }}
-              />
-            </Box>
-          </DialogContent>
-          <DialogActions sx={{ backgroundColor: '#141414', px: 3, pb: 2 }}>
-            <Button onClick={handleCloseDialog} sx={{ color: '#A0A0A0' }}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              sx={{
-                backgroundColor: '#F4B942',
-                color: '#0A0A0A',
-                '&:hover': { backgroundColor: '#FFD166' },
-              }}
-            >
-              {editingLanguage ? 'Guardar' : 'Crear'}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
+      {removing && removeCounts && (
+        <ConfirmDialog open title={`¿Eliminar el idioma «${removing.name}»?`} confirmLabel="Eliminar idioma" destructive onConfirm={() => remove(removing)} onClose={() => setRemoving(null)}>
+          <span style={{ display: 'block' }}>
+            Se borrarán para siempre {removeCounts.tours} {plural(removeCounts.tours, 'texto', 'textos')} de tours y {removeCounts.categories} de categorías en {removing.name}.
+          </span>
+          <span style={{ display: 'block' }}>Esta acción no se puede deshacer.</span>
+        </ConfirmDialog>
+      )}
     </Box>
   );
 }
