@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { open, writes } from './fixtures/catalog.js';
+import { languages } from './fixtures/data.js';
 
 // V6 Categorías (REQ-19 a REQ-23; AC-19 a AC-22; AC-UX-8). API simulada; D-2: guardado por partes.
 const panel = (page) => page.getByRole('dialog', { name: /categoría/ });
@@ -186,6 +187,39 @@ test.describe('Categorías', () => {
     const toast = page.getByRole('alert').filter({ hasText: 'No pudimos eliminar «Gastronomía»' });
     await expect(toast).toContainText('El servidor tuvo un problema.');
     await expect(toast.getByRole('button', { name: 'Reintentar' })).toBeVisible();
+  });
+
+  test('1440: los encabezados "Tours" e "Idiomas" no quedan pegados', async ({ page }) => {
+    await open(page, '/categories');
+    await expect(page.getByRole('columnheader', { name: 'Idiomas' })).toBeVisible();
+    const ends = await page.evaluate(() => {
+      const box = (name) => {
+        const th = [...document.querySelectorAll('thead th')].find((x) => x.textContent.trim() === name);
+        const range = document.createRange();
+        range.selectNodeContents(th);
+        return range.getBoundingClientRect();
+      };
+      return { tours: box('Tours').right, idiomas: box('Idiomas').left };
+    });
+    expect(ends.idiomas - ends.tours).toBeGreaterThanOrEqual(16);
+  });
+
+  test('el panel lista Español primero y English después aunque la API los entregue en otro orden', async ({ page }) => {
+    await open(page, '/categories', { data: { languages: [languages[1], languages[2], languages[0]] } });
+    await page.getByRole('button', { name: 'Editar «Parques»' }).click();
+    const names = await panel(page).locator('label[id^="cat-name-"]').allTextContents();
+    expect(names.map((n) => n.replace(' *', ''))).toEqual(['Nombre visible (Español)', 'Nombre visible (English)', 'Nombre visible (Français)']);
+  });
+
+  test('un aviso de error no queda sobre el panel: abrir un panel lo cierra', async ({ page }) => {
+    const api = await open(page, '/categories');
+    api.override((r) => (r.method === 'DELETE' ? { status: 500, body: {} } : undefined));
+    await page.getByRole('button', { name: 'Eliminar «Gastronomía»' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Eliminar' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'No pudimos eliminar «Gastronomía»' })).toBeVisible();
+    await page.getByRole('button', { name: 'Editar «Parques»' }).click();
+    await expect(panel(page)).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'No pudimos eliminar' })).toHaveCount(0);
   });
 
   test('cerrar el panel con cambios pregunta; sin cambios cierra directo', async ({ page }) => {

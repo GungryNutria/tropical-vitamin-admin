@@ -7,6 +7,10 @@ const isBlank = (value) => !value || !String(value).trim();
 
 export const activeLanguages = (languages = []) => languages.filter((l) => l.isActive);
 
+// Español primero, luego inglés, luego el resto en su orden (sort estable).
+const languageRank = (l) => PROTECTED_LANGUAGE_CODES.indexOf(l.code) === -1 ? PROTECTED_LANGUAGE_CODES.length : PROTECTED_LANGUAGE_CODES.indexOf(l.code);
+export const orderLanguages = (languages = []) => [...languages].sort((a, b) => languageRank(a) - languageRank(b));
+
 // Estado de cada idioma activo sobre una lista de traducciones: completo si existe
 // y todos los campos pedidos tienen texto tras trim().
 function languageStatus(translations = [], languages = [], fields) {

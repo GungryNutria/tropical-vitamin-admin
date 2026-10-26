@@ -408,9 +408,6 @@ export default function TourList() {
     setParams({}, { replace: true });
   };
 
-  // Hoja y fila de chips de 390: quitan los filtros, no la búsqueda.
-  const clearOnlyFilters = () => update({ categoria: '', estado: '', pendientes: '' });
-
   // Interruptor: guarda en el acto (optimista); si falla, vuelve y ofrece Reintentar; si sale bien, avisa con Deshacer (5 s).
   const patchCache = (id, isActive) =>
     queryClient.setQueryData(['tours'], (old) => (old || []).map((t) => (t.id === id ? { ...t, isActive } : t)));
@@ -522,7 +519,7 @@ export default function TourList() {
         type="button"
         underline="always"
         color="primary.main"
-        onClick={mobile ? clearOnlyFilters : clearFilters}
+        onClick={clearFilters}
         sx={{ fontSize: 14, fontWeight: 600, ...(mobile && { minHeight: 44, px: 1 }) }}
       >
         Quitar filtros
@@ -582,7 +579,7 @@ export default function TourList() {
           estado={estado}
           pendientes={pendientes}
           update={update}
-          onClear={clearOnlyFilters}
+          onClear={clearFilters}
           count={visible.length}
         />
       </Box>

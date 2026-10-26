@@ -223,6 +223,33 @@ test.describe('V5 Edición de tour (T-8)', () => {
     expect(writes(requests)[0].body.isActive).toBe(false);
   });
 
+  test('el precio se muestra con separador de miles al salir del campo y la API recibe un número', async ({ page }) => {
+    const { requests } = await openTour(page, '/tours/1');
+    const price = page.locator('#tour-price');
+    await expect(price).toHaveValue('1,000');
+    await price.click();
+    await price.fill('2500.5');
+    await expect(price).toHaveValue('2500.5');
+    await page.locator('#tour-duration').focus();
+    await expect(price).toHaveValue('2,500.5');
+    await save(page).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Cambios guardados' })).toBeVisible();
+    expect(writes(requests)[0].body.price).toBe(2500.5);
+  });
+
+  test('las pestañas de idioma van Español, English y luego el resto; el inactivo lleva "Opcional"', async ({ page }) => {
+    const data = editCatalog();
+    const { languages } = await import('./fixtures/data.js');
+    await mockApi(page, { data: { tours: data, languages: [languages[1], languages[2], languages[0]] } });
+    await page.goto('/tours/1');
+    const tabs = page.getByRole('tab');
+    await expect(tabs.nth(0)).toContainText('Español');
+    await expect(tabs.nth(1)).toContainText('English');
+    await expect(tabs.nth(2)).toContainText('Français');
+    await expect(tabs.nth(2)).toContainText('Opcional');
+    await expect(tabs.nth(0)).not.toContainText('Opcional');
+  });
+
   test('E5.1: cargando muestra el esqueleto con Guardar deshabilitado', async ({ page }) => {
     let release;
     const gate = new Promise((r) => { release = r; });

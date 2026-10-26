@@ -119,6 +119,15 @@ test.describe('Idiomas', () => {
     expect(writes(api.requests)).toEqual([{ method: 'PATCH', path: '/languages/3', body: { code: 'fr', name: 'Français', isActive: false } }]);
   });
 
+  test('editar solo el nombre de es no envía isActive (evita el 409 LANGUAGE_PROTECTED)', async ({ page }) => {
+    const api = await open(page, '/languages');
+    await page.getByRole('button', { name: 'Editar «Español»' }).click();
+    await page.getByLabel('Nombre').fill('Español MX');
+    await page.getByRole('button', { name: 'Guardar' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Idioma «Español MX» guardado' })).toBeVisible();
+    expect(writes(api.requests)).toEqual([{ method: 'PATCH', path: '/languages/1', body: { code: 'es', name: 'Español MX' } }]);
+  });
+
   test('activar un idioma avisa cuántos tours y categorías quedan pendientes', async ({ page }) => {
     const api = await open(page, '/languages');
     await page.getByRole('button', { name: 'Editar «Français»' }).click();

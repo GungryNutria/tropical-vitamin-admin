@@ -7,8 +7,8 @@ import Check from '@mui/icons-material/Check';
 import ChevronRight from '@mui/icons-material/ChevronRight';
 import KeyboardArrowDown from '@mui/icons-material/KeyboardArrowDown';
 import api, { errorMessage } from '../../lib/api';
-import { formatDuration } from '../../lib/format';
-import { activeLanguages } from '../../lib/catalog';
+import { formatAmount, formatDuration } from '../../lib/format';
+import { activeLanguages, orderLanguages } from '../../lib/catalog';
 import { useToasts } from '../../lib/useToasts';
 import { useIsStacked } from '../../lib/useIsMobile';
 import useUnsavedGuard from '../../lib/useUnsavedGuard';
@@ -119,7 +119,7 @@ function TabStatus({ language, complete, errorCount }) {
   if (errorCount > 0) {
     return <Chip size="small" label={plural(errorCount, 'error', 'errores')} sx={{ ml: 1, bgcolor: 'statusBg.danger', color: 'error.main' }} />;
   }
-  if (!language.isActive) return null;
+  if (!language.isActive) return <Chip size="small" label="Opcional" sx={{ ml: 1, bgcolor: 'neutral.chip' }} />;
   if (complete) {
     return (
       <>
@@ -131,8 +131,9 @@ function TabStatus({ language, complete, errorCount }) {
   return <Chip size="small" label="Pendiente" sx={{ ml: 1, bgcolor: 'statusBg.warning', color: 'warning.main' }} />;
 }
 
-function TourForm({ tour, categories, languages, savedFlag }) {
+function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }) {
   const isNew = !tour;
+  const languages = useMemo(() => orderLanguages(unorderedLanguages), [unorderedLanguages]);
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -145,6 +146,7 @@ function TourForm({ tour, categories, languages, savedFlag }) {
   const [baseline, setBaseline] = useState(() => initialForm(tour, languages));
   const [form, setForm] = useState(baseline);
   const [activeLang, setActiveLang] = useState(languages.find((l) => l.isActive)?.id ?? languages[0]?.id);
+  const [priceFocused, setPriceFocused] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [justSaved, setJustSaved] = useState(!!savedFlag);
@@ -403,8 +405,10 @@ function TourForm({ tour, categories, languages, savedFlag }) {
               required
               prefix="$"
               suffix="MXN"
-              value={form.price}
-              onChange={(e) => setField('price', e.target.value)}
+              value={priceFocused ? form.price : formatAmount(form.price)}
+              onFocus={() => setPriceFocused(true)}
+              onBlur={() => setPriceFocused(false)}
+              onChange={(e) => setField('price', e.target.value.replace(/,/g, ''))}
               slotProps={{ htmlInput: { inputMode: 'decimal' } }}
               help="En pesos mexicanos."
               error={errorOf('tour-price')}

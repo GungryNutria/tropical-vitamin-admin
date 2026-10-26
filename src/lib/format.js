@@ -10,6 +10,12 @@ export function formatDuration(minutes) {
 
 const priceNumber = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 2 });
 
+// "1500" -> "1,500"; lo que no es número se devuelve igual.
+export function formatAmount(raw) {
+  const text = String(raw ?? '').trim();
+  return text !== '' && Number.isFinite(Number(text)) ? priceNumber.format(Number(text)) : raw;
+}
+
 // 1000 -> "$1,000 MXN"
 export function formatPrice(amount) {
   const value = Number(amount);

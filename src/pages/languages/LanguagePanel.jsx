@@ -48,7 +48,9 @@ export default function LanguagePanel({ language, languages, tours, categories, 
       return;
     }
     setSaving(true);
-    const body = { code, name: form.name.trim(), isActive: form.isActive };
+    // Al editar solo se envía isActive si cambió: un PATCH con isActive en es/en sin cambio da 409.
+    const body = { code, name: form.name.trim() };
+    if (!language || form.isActive !== language.isActive) body.isActive = form.isActive;
     try {
       if (language) await api.patch(`/languages/${language.id}`, body);
       else await api.post('/languages', body);

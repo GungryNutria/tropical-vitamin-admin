@@ -108,6 +108,7 @@ test.describe('V2 Menú: barra superior y cajón a 390 (T-9)', () => {
     await expect(nav(page)).toBeVisible();
     await page.setViewportSize({ width: 1280, height: 844 });
     await expect(menuButton(page)).toHaveCount(0);
+    await expect(nav(page)).toBeVisible();
     expect((await nav(page).boundingBox()).width).toBe(232);
   });
 });

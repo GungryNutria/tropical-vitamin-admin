@@ -92,6 +92,8 @@ export default function ToastsProvider({ children }) {
       success: (message, opts) => push('success', message, opts),
       error: (message, opts) => push('error', message, opts),
       close,
+      // Los avisos persistentes (errores) no deben quedar sobre un panel lateral abierto.
+      closeErrors: () => setToasts((list) => (list.some((t) => t.kind === 'error') ? list.filter((t) => t.kind !== 'error') : list)),
     }),
     [push, close],
   );

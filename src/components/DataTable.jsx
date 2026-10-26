@@ -34,7 +34,7 @@ export default function DataTable({ label, columns, rows, getKey, mobile, render
         <TableHead>
           <TableRow>
             {columns.map((c, i) => (
-              <TableCell key={c.key} scope="col" align={c.align} sx={{ ...headCell, ...(i === 0 && { pl: 2 }) }}>
+              <TableCell key={c.key} scope="col" align={c.align} sx={{ ...headCell, ...(i === 0 && { pl: 2 }), ...(c.pl && { pl: c.pl }) }}>
                 {c.srOnly ? <Box component="span" sx={srOnly}>{c.label}</Box> : c.label}
               </TableCell>
             ))}
@@ -53,7 +53,7 @@ export default function DataTable({ label, columns, rows, getKey, mobile, render
               }}
             >
               {columns.map((c, i) => (
-                <TableCell key={c.key} align={c.align} sx={{ ...bodyCell, ...(i === 0 && { pl: 2 }), pr: 1 }}>
+                <TableCell key={c.key} align={c.align} sx={{ ...bodyCell, ...(i === 0 && { pl: 2 }), ...(c.pl && { pl: c.pl }), pr: 1 }}>
                   {c.render(row)}
                 </TableCell>
               ))}
