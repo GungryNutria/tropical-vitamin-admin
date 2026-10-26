@@ -27,7 +27,7 @@ function CenteredState({ icon, title, description, children, role }) {
   );
 }
 
-// action = { label, onClick } (botón primario; uno solo por vista).
+// action = { label, onClick, variant? } (por defecto botón primario; uno solo por vista).
 export function EmptyState({ title, description, action, icon }) {
   return (
     <CenteredState
@@ -35,7 +35,7 @@ export function EmptyState({ title, description, action, icon }) {
       title={title}
       description={description}
     >
-      {action && <Button variant="contained" onClick={action.onClick}>{action.label}</Button>}
+      {action && <Button variant={action.variant || 'contained'} onClick={action.onClick}>{action.label}</Button>}
     </CenteredState>
   );
 }

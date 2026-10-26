@@ -19,7 +19,8 @@ const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBR
  * ({ method, path, headers, body }), y `override(fn)` para cambiar respuestas en una prueba:
  * fn(request) devuelve { status, body } o undefined para dejar la respuesta normal.
  */
-export async function mockApi(page, { authenticated = true } = {}) {
+export async function mockApi(page, { authenticated = true, data = {} } = {}) {
+  const { tours: tourData = tours, categories: categoryData = categories, languages: languageData = languages } = data;
   const requests = [];
   let override = () => undefined;
 
@@ -45,11 +46,11 @@ export async function mockApi(page, { authenticated = true } = {}) {
     if (req.method() === 'POST' && path === '/auth/login') return json(route, { access_token: 'token-de-prueba', user });
     if (path.startsWith('/upload/')) return route.fulfill({ status: 200, headers: cors, contentType: 'image/gif', body: PIXEL });
     if (req.method() === 'GET') {
-      if (path === '/tours/all') return json(route, tours);
-      if (path === '/categories') return json(route, categories);
-      if (path === '/languages') return json(route, languages);
+      if (path === '/tours/all') return json(route, tourData);
+      if (path === '/categories') return json(route, categoryData);
+      if (path === '/languages') return json(route, languageData);
       const tourId = path.match(/^\/tours\/(\d+)$/);
-      if (tourId) return json(route, tours.find((t) => t.id === Number(tourId[1])) ?? null);
+      if (tourId) return json(route, tourData.find((t) => t.id === Number(tourId[1])) ?? null);
     }
     return json(route, {});
   });

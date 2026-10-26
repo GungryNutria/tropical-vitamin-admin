@@ -128,6 +128,8 @@ const theme = createTheme({
         inputMultiline: { padding: '9px 12px' },
       },
     },
+    // El select usa min-height 1.4375em (21.56 px): sin esto el control mide 39.56 px y no llega a 40.
+    MuiSelect: { styleOverrides: { select: { minHeight: 22 } } },
     MuiFormHelperText: {
       styleOverrides: { root: { fontSize: 13, lineHeight: '18px', marginLeft: 0, color: color.textTertiary, '&.Mui-error': { color: color.danger } } },
     },
