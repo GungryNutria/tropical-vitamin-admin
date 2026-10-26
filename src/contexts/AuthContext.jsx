@@ -1,21 +1,28 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { API_URL, setUnauthorizedHandler } from '../lib/api';
 
 const AuthContext = createContext(null);
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+function readSession() {
+  try {
+    const token = localStorage.getItem('adminToken');
+    const stored = localStorage.getItem('adminUser');
+    return token && stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(readSession);
+  const loading = false;
 
   useEffect(() => {
-    // Check localStorage for existing session
-    const storedUser = localStorage.getItem('adminUser');
-    const storedToken = localStorage.getItem('adminToken');
-    if (storedUser && storedToken) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    setUnauthorizedHandler(() => {
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminUser');
+      setUser(null);
+    });
   }, []);
 
   const login = async (email, password) => {

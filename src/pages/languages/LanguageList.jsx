@@ -22,27 +22,25 @@ import {
 } from '@mui/material';
 import { Edit as EditIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useState } from 'react';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import api from '../../lib/api';
 
 async function fetchLanguages() {
-  const { data } = await axios.get(`${API_URL}/languages`);
+  const { data } = await api.get(`/languages`);
   return data;
 }
 
 async function createLanguage(language) {
-  const { data } = await axios.post(`${API_URL}/languages`, language);
+  const { data } = await api.post(`/languages`, language);
   return data;
 }
 
 async function updateLanguage({ id, ...language }) {
-  const { data } = await axios.patch(`${API_URL}/languages/${id}`, language);
+  const { data } = await api.patch(`/languages/${id}`, language);
   return data;
 }
 
 async function deleteLanguage(id) {
-  await axios.delete(`${API_URL}/languages/${id}`);
+  await api.delete(`/languages/${id}`);
 }
 
 export default function LanguageList() {

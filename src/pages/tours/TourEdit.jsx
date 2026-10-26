@@ -15,7 +15,7 @@ import {
   Tab,
 } from '@mui/material';
 import { Save as SaveIcon, ArrowBack as ArrowBackIcon, Upload as UploadIcon } from '@mui/icons-material';
-import axios from 'axios';
+import api from '../../lib/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const UPLOADS_URL = import.meta.env.VITE_UPLOADS_URL || API_URL;
@@ -30,27 +30,27 @@ function getImageUrl(img) {
 }
 
 async function fetchTour(id) {
-  const { data } = await axios.get(`${API_URL}/tours/${id}`);
+  const { data } = await api.get(`/tours/${id}`);
   return data;
 }
 
 async function fetchCategories() {
-  const { data } = await axios.get(`${API_URL}/categories`);
+  const { data } = await api.get(`/categories`);
   return data;
 }
 
 async function fetchLanguages() {
-  const { data } = await axios.get(`${API_URL}/languages`);
+  const { data } = await api.get(`/languages`);
   return data;
 }
 
 async function createTour(data) {
-  const { data: result } = await axios.post(`${API_URL}/tours`, data);
+  const { data: result } = await api.post(`/tours`, data);
   return result;
 }
 
 async function updateTour({ id, data }) {
-  const { data: result } = await axios.patch(`${API_URL}/tours/${id}`, data);
+  const { data: result } = await api.patch(`/tours/${id}`, data);
   return result;
 }
 
@@ -60,7 +60,7 @@ async function uploadImage(file, name) {
   if (name) {
     formData.append('name', name);
   }
-  const { data } = await axios.post(`${API_URL}/upload`, formData, {
+  const { data } = await api.post(`/upload`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return data;

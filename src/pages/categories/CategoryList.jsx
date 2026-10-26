@@ -22,41 +22,39 @@ import {
 } from '@mui/material';
 import { Edit as EditIcon, Add as AddIcon, Delete as DeleteIcon, KeyboardArrowDown as KeyboardArrowDownIcon, KeyboardArrowUp as KeyboardArrowUpIcon } from '@mui/icons-material';
 import { useState } from 'react';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import api from '../../lib/api';
 
 async function fetchCategories() {
-  const { data } = await axios.get(`${API_URL}/categories`);
+  const { data } = await api.get(`/categories`);
   return data;
 }
 
 async function fetchLanguages() {
-  const { data } = await axios.get(`${API_URL}/languages`);
+  const { data } = await api.get(`/languages`);
   return data;
 }
 
 async function createCategory(category) {
-  const { data } = await axios.post(`${API_URL}/categories`, category);
+  const { data } = await api.post(`/categories`, category);
   return data;
 }
 
 async function updateCategory({ id, ...category }) {
-  const { data } = await axios.patch(`${API_URL}/categories/${id}`, category);
+  const { data } = await api.patch(`/categories/${id}`, category);
   return data;
 }
 
 async function deleteCategory(id) {
-  await axios.delete(`${API_URL}/categories/${id}`);
+  await api.delete(`/categories/${id}`);
 }
 
 async function updateCategoryTranslation({ categoryId, languageId, data }) {
-  const { result } = await axios.patch(`${API_URL}/categories/${categoryId}/translations/${languageId}`, data);
+  const { result } = await api.patch(`/categories/${categoryId}/translations/${languageId}`, data);
   return result;
 }
 
 async function createCategoryTranslation({ categoryId, data }) {
-  const { data: result } = await axios.post(`${API_URL}/categories/${categoryId}/translations`, data);
+  const { data: result } = await api.post(`/categories/${categoryId}/translations`, data);
   return result;
 }
 
@@ -174,9 +172,9 @@ export default function CategoryList() {
       const existingTranslation = translationEdits[editKey]?.id;
       
       if (existingTranslation) {
-        await axios.patch(`${API_URL}/categories/${categoryId}/translations/${languageId}`, editData);
+        await api.patch(`/categories/${categoryId}/translations/${languageId}`, editData);
       } else {
-        await axios.post(`${API_URL}/categories/${categoryId}/translations`, {
+        await api.post(`/categories/${categoryId}/translations`, {
           languageId,
           ...editData
         });
