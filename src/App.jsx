@@ -1,15 +1,11 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import TourList from './pages/tours/TourList';
-import TourEdit from './pages/tours/TourEdit';
-import LanguageList from './pages/languages/LanguageList';
-import CategoryList from './pages/categories/CategoryList';
-import Layout from './components/Layout';
+import { AuthProvider } from './contexts/AuthContext';
+import ToastsProvider from './components/Toasts';
+import theme from './theme';
+import router from './router';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,51 +16,15 @@ const queryClient = new QueryClient({
   },
 });
 
-const darkTheme = createTheme({
-  palette: {
-    mode: 'dark',
-    primary: {
-      main: '#F4B942',
-    },
-    background: {
-      default: '#0A0A0A',
-      paper: '#141414',
-    },
-  },
-});
-
-function PrivateRoute({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return null;
-  return user ? children : <Navigate to="/login" replace />;
-}
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={darkTheme}>
+      <ThemeProvider theme={theme}>
         <CssBaseline />
         <AuthProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route
-                path="/"
-                element={
-                  <PrivateRoute>
-                    <Layout />
-                  </PrivateRoute>
-                }
-              >
-                <Route index element={<Dashboard />} />
-                <Route path="tours" element={<TourList />} />
-                <Route path="tours/:id" element={<TourEdit />} />
-                <Route path="tours/new" element={<TourEdit />} />
-                <Route path="languages" element={<LanguageList />} />
-                <Route path="categories" element={<CategoryList />} />
-              </Route>
-            </Routes>
-          </BrowserRouter>
+          <ToastsProvider>
+            <RouterProvider router={router} />
+          </ToastsProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
