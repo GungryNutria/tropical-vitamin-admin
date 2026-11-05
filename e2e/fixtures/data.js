@@ -54,3 +54,15 @@ categories.forEach((c) => {
 });
 
 export const user = { id: 1, email: 'admin@tropical-vitamin.com' };
+
+// Redes sociales (spec 007): Facebook visible, Instagram guardada y oculta, LinkedIn vacía. Datos de ejemplo, no de la clienta.
+export const social = {
+  facebookUrl: 'https://www.facebook.com/ejemplo',
+  facebookVisible: true,
+  instagramUrl: 'https://www.instagram.com/ejemplo',
+  instagramVisible: false,
+  linkedinUrl: null,
+  linkedinVisible: false,
+  whatsappNumber: '529841681263',
+  updatedAt: '2026-11-05T12:00:00.000Z',
+};

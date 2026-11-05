@@ -63,6 +63,20 @@ test.describe('Accesibilidad (axe)', () => {
     await expect(page.getByRole('dialog', { name: /¿Eliminar el idioma/ }).getByRole('button', { name: 'Cancelar' })).toBeFocused();
     await expectNoBlockingAxe(page);
   });
+
+  test('Redes sociales: formulario, con aviso de interruptor apagado y con errores', async ({ page }) => {
+    await open(page, '/social');
+    await expect(page.getByLabel('Facebook', { exact: true })).toBeVisible();
+    await expectNoBlockingAxe(page);
+    await page.getByLabel('Facebook', { exact: true }).fill('');
+    await expect(page.getByText('Se apagó porque no hay enlace.')).toBeVisible();
+    await expectNoBlockingAxe(page);
+    await page.getByLabel('Instagram', { exact: true }).fill('https://www.facebook.com/ejemplo');
+    await page.getByLabel('WhatsApp *', { exact: true }).fill('12');
+    await page.getByRole('button', { name: 'Guardar' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Revisa 2 campos' })).toBeVisible();
+    await expectNoBlockingAxe(page);
+  });
 });
 
 test.describe('Barrido de anchos (sin scroll horizontal)', () => {
@@ -71,6 +85,7 @@ test.describe('Barrido de anchos (sin scroll horizontal)', () => {
       ['Inicio', '/', (p) => p.getByRole('list', { name: 'Pendientes del catálogo' })],
       ['Categorías', '/categories', (p) => p.getByLabel('Categorías', { exact: true })],
       ['Idiomas', '/languages', (p) => p.getByLabel('Idiomas', { exact: true })],
+      ['Redes sociales', '/social', (p) => p.getByLabel('Facebook', { exact: true })],
     ]) {
       test(`${name} a ${width}`, async ({ page }) => {
         await open(page, url, { width, height: 844 });

@@ -58,12 +58,12 @@ test.describe('V2 Menú: barra superior y cajón a 390 (T-9)', () => {
     await expect(page.getByRole('link', { name: 'Nuevo', exact: true })).toHaveCount(0);
   });
 
-  test('E2.2 abierto: pantalla completa con los 4 destinos de 52 px, el activo marcado, correo y "Cerrar sesión" de 52 px', async ({ page }) => {
+  test('E2.2 abierto: pantalla completa con los 5 destinos de 52 px, el activo marcado, correo y "Cerrar sesión" de 52 px', async ({ page }) => {
     await open(page, '/tours');
     await menuButton(page).click();
     await expect(nav(page)).toBeVisible();
     const links = nav(page).getByRole('link');
-    await expect(links).toHaveText(['Inicio', 'Tours', 'Categorías', 'Idiomas']);
+    await expect(links).toHaveText(['Inicio', 'Tours', 'Categorías', 'Idiomas', 'Redes sociales']);
     for (const link of await links.all()) expect((await link.boundingBox()).height).toBe(52);
     await expect(nav(page).getByRole('link', { name: 'Tours' })).toHaveAttribute('aria-current', 'page');
     await expect(nav(page).getByText('admin@tropical-vitamin.com')).toBeVisible();

@@ -15,6 +15,7 @@ const menuItems = [
   { text: 'Tours', path: '/tours' },
   { text: 'Categorías', path: '/categories' },
   { text: 'Idiomas', path: '/languages' },
+  { text: 'Redes sociales', path: '/social' },
 ];
 
 // /tours y /tours/:id marcan "Tours".
