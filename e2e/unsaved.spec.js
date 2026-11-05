@@ -67,10 +67,10 @@ test.describe('Cambios sin guardar (T-8, REQ-12)', () => {
     expect(writes(requests)).toHaveLength(1);
   });
 
-  test('AC-12: cambiar la foto cuenta como cambio sin guardar (E5.13)', async ({ page }) => {
+  test('AC-12: agregar una foto cuenta como cambio sin guardar (E5.13)', async ({ page }) => {
     await openTour(page, '/tours/1');
-    await page.getByLabel('Elegir foto', { exact: true }).setInputFiles(fileOf('nueva.jpg', 'image/jpeg', MB));
-    await expect(page.getByText('Foto nueva.')).toBeVisible();
+    await page.getByLabel('Elegir fotos', { exact: true }).setInputFiles(fileOf('nueva.jpg', 'image/jpeg', MB));
+    await expect(page.getByText('2 de 8 fotos')).toBeVisible();
     await page.getByRole('link', { name: 'Volver a la lista' }).click();
     await expect(dialog(page)).toBeVisible();
   });

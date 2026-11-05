@@ -26,6 +26,18 @@ export const writes = (requests) =>
 
 export const uploads = (requests) => requests.filter((r) => r.method === 'POST' && r.path === '/upload');
 
+// Fotos de la galería como las devuelve GET /tours/:id: [{ id, tourId, filename, position }].
+export const galleryOf = (tourId, filenames) => filenames.map((filename, position) => ({ id: tourId * 100 + position, tourId, filename, position }));
+
+// Catálogo con el tour 1 con `count` fotos (a.jpg, b.jpg…); el 40 se deja igual.
+export function galleryCatalog(count, { isActive = true } = {}) {
+  const list = editCatalog();
+  const tour = list.find((t) => t.id === 1);
+  const names = Array.from({ length: count }, (_, i) => `foto-${i + 1}.jpg`);
+  Object.assign(tour, { isActive, images: galleryOf(1, names), img: names[0] ? `/uploads/${names[0]}` : null });
+  return list;
+}
+
 export const fileOf = (name, mimeType, bytes) => ({ name, mimeType, buffer: Buffer.alloc(bytes) });
 
 export const MB = 1024 * 1024;

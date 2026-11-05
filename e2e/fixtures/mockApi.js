@@ -22,6 +22,7 @@ const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBR
 export async function mockApi(page, { authenticated = true, data = {} } = {}) {
   const { tours: tourData = tours, categories: categoryData = categories, languages: languageData = languages, social: socialData = social } = data;
   let socialState = { ...socialData };
+  let uploadCount = 0;
   const requests = [];
   let override = () => undefined;
 
@@ -58,7 +59,7 @@ export async function mockApi(page, { authenticated = true, data = {} } = {}) {
       socialState = { ...JSON.parse(req.postData() || '{}'), updatedAt: '2026-11-05T12:30:00.000Z' };
       return json(route, socialState);
     }
-    if (req.method() === 'POST' && path === '/upload') return json(route, { url: '/uploads/6f1c2e0a-nueva-foto.jpg' }, 201);
+    if (req.method() === 'POST' && path === '/upload') return json(route, { url: `/uploads/6f1c2e0a-${++uploadCount}.jpg` }, 201); // nombre único, como el uuid de la API
     if (req.method() === 'POST' && path === '/categories') return json(route, { id: 100, ...JSON.parse(req.postData() || '{}') }, 201);
     if (req.method() === 'POST' && path === '/tours') return json(route, { id: 40, ...JSON.parse(req.postData() || '{}') }, 201);
     return json(route, {});

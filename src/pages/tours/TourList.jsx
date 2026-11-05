@@ -54,6 +54,10 @@ const cell = { p: 0, height: 52, borderBottom: '1px solid', borderColor: 'border
 const headCell = { p: 0, height: 40, fontSize: 13, fontWeight: 600, color: 'text.secondary', borderBottom: '1px solid', borderColor: 'border.subtle' };
 const srOnly = { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
 
+// Sin fotos un tour no se puede mostrar en la web (REQ-21). Un tour que ya está visible puede apagarse siempre.
+const NO_PHOTO_HINT = 'Sin fotos: agrégalas en la edición del tour para mostrarlo.';
+const switchBlocked = (tour) => hasNoPhoto(tour) && !tour.isActive;
+
 function ToursTable({ busy, children }) {
   return (
     <Box
@@ -169,11 +173,17 @@ function TourRow({ row, onToggle }) {
         <LangChips status={languagesStatus} />
       </TableCell>
       <TableCell sx={{ ...cell, position: 'relative', zIndex: 1 }}>
-        <Switch
-          checked={!!tour.isActive}
-          onChange={(e) => onToggle(tour, title, e.target.checked)}
-          slotProps={{ input: { role: 'switch', 'aria-label': `Mostrar «${title}» en la web` } }}
-        />
+        <Tooltip title={switchBlocked(tour) ? NO_PHOTO_HINT : ''} describeChild placement="top">
+          <span style={{ display: 'inline-block' }}>
+            <Switch
+              checked={!!tour.isActive}
+              disabled={switchBlocked(tour)}
+              onChange={(e) => onToggle(tour, title, e.target.checked)}
+              slotProps={{ input: { role: 'switch', 'aria-label': `Mostrar «${title}» en la web`, 'aria-describedby': switchBlocked(tour) ? `no-photo-${tour.id}` : undefined } }}
+            />
+          </span>
+        </Tooltip>
+        {switchBlocked(tour) && <Box component="span" id={`no-photo-${tour.id}`} sx={srOnly}>{NO_PHOTO_HINT}</Box>}
       </TableCell>
     </TableRow>
   );
@@ -246,9 +256,11 @@ function MobileRow({ row, onToggle }) {
       <Box component="label" sx={{ position: 'relative', zIndex: 1, display: 'grid', placeItems: 'center', width: 48, height: 44, overflow: 'hidden', cursor: 'pointer' }}>
         <Switch
           checked={!!tour.isActive}
+          disabled={switchBlocked(tour)}
           onChange={(e) => onToggle(tour, title, e.target.checked)}
-          slotProps={{ input: { role: 'switch', 'aria-label': `Mostrar «${title}» en la web` } }}
+          slotProps={{ input: { role: 'switch', 'aria-label': `Mostrar «${title}» en la web`, 'aria-describedby': switchBlocked(tour) ? `no-photo-${tour.id}` : undefined } }}
         />
+        {switchBlocked(tour) && <Box component="span" id={`no-photo-${tour.id}`} sx={srOnly}>{NO_PHOTO_HINT}</Box>}
       </Box>
     </Box>
   );
@@ -422,8 +434,12 @@ export default function TourList() {
           action: { label: 'Deshacer', onClick: () => setActive(tour, title, previous, { announce: false }) },
         });
       }
-    } catch {
+    } catch (err) {
       patchCache(tour.id, previous);
+      if (err?.response?.status === 409 && err.response.data?.code === 'TOUR_NEEDS_PHOTO') {
+        toasts.error('No se puede mostrar: este tour no tiene fotos.');
+        return;
+      }
       toasts.error(`No pudimos cambiar «${title}».`, {
         action: { label: 'Reintentar', onClick: () => setActive(tour, title, isActive, { announce }) },
       });

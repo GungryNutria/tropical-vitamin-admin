@@ -39,6 +39,7 @@ export const tours = Array.from({ length: 39 }, (_, i) => {
     location: 'Cancún, México',
     duration: 150 + (i % 4) * 30,
     img: `/uploads/tour-${id}.jpg`,
+    images: [{ id, tourId: id, filename: `tour-${id}.jpg`, position: 0 }], // portada = images[0] (spec 006)
     isActive: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     category: { id: category.id, adminName: category.adminName },
