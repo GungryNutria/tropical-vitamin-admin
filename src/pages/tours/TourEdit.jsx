@@ -510,8 +510,8 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
         <Box component="section" aria-labelledby="photo-title" sx={{ ...card, p: '15px', order: { xs: 2, lg: 0 } }}>
           <Typography id="photo-title" variant="h2" component="h2" sx={{ mb: 1.5 }}>Portada</Typography>
           {stacked ? (
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-              <Box sx={{ width: 112, flexShrink: 0 }}><CoverPreview filename={form.images[0]} /></Box>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'flex-start' }}>
+              <Box sx={{ width: form.images[0] ? 112 : '100%', flexShrink: 0 }}><CoverPreview filename={form.images[0]} /></Box>
               <Typography variant="caption" color="text.secondary">Así se ve en la tarjeta</Typography>
             </Box>
           ) : (
