@@ -174,6 +174,47 @@ test.describe('V4 Lista de tours (T-7)', () => {
     await expect(page.getByRole('button', { name: 'Deshacer' })).toHaveCount(0);
   });
 
+  // Spec 006, REQ-21: sin fotos un tour no se puede mostrar en la web.
+  const withoutPhotos = (id, extra = {}) => {
+    const list = catalog();
+    Object.assign(list.find((t) => t.id === id), { img: null, images: [], ...extra });
+    return list;
+  };
+
+  test('AC-16: el interruptor de un tour oculto y sin fotos está deshabilitado y dice por qué (tooltip y descripción)', async ({ page }) => {
+    const { requests } = await mockApi(page, { data: { tours: withoutPhotos(8) } });
+    await page.goto('/tours');
+    const sw = switchOf(page, 'Tulum y Cobá');
+    await expect(sw).toBeDisabled();
+    await expect(sw).not.toBeChecked();
+    await expect(sw).toHaveAccessibleDescription('Sin fotos: agrégalas en la edición del tour para mostrarlo.');
+    await row(page, 'tulum-coba').locator('td').last().locator('span[title]').hover();
+    await expect(page.getByRole('tooltip')).toHaveText('Sin fotos: agrégalas en la edición del tour para mostrarlo.');
+    await sw.click({ force: true });
+    expect(patches(requests)).toEqual([]);
+    await expect(switchOf(page, 'Snorkel & Buceo')).toBeEnabled(); // con foto sigue igual
+  });
+
+  test('AC-16: un tour que ya está visible sin foto sí puede apagarse (no se queda atrapado)', async ({ page }) => {
+    const { requests } = await mockApi(page, { data: { tours: withoutPhotos(9) } });
+    await page.goto('/tours');
+    const sw = switchOf(page, 'Isla Holbox');
+    await expect(sw).toBeEnabled();
+    await sw.click();
+    await expect.poll(() => patches(requests)).toEqual([{ path: '/tours/9', body: { isActive: false } }]);
+  });
+
+  test('AC-16: si el API responde 409 TOUR_NEEDS_PHOTO, el interruptor vuelve y el aviso explica el motivo, sin Reintentar', async ({ page }) => {
+    const api = await open(page);
+    api.override((r) => (r.method === 'PATCH' ? { status: 409, body: { statusCode: 409, code: 'TOUR_NEEDS_PHOTO', message: 'Agrega al menos una foto para mostrar el tour en la web.' } } : undefined));
+    const sw = switchOf(page, 'Tulum y Cobá');
+    await sw.click();
+    const toast = page.getByRole('alert').filter({ hasText: 'No se puede mostrar: este tour no tiene fotos.' });
+    await expect(toast).toBeVisible();
+    await expect(toast.getByRole('button', { name: 'Reintentar' })).toHaveCount(0);
+    await expect(sw).not.toBeChecked();
+  });
+
   test('AC-7: el aviso de éxito se va a los 5 s y encender un tour dice que ya se muestra', async ({ page }) => {
     await open(page);
     await switchOf(page, 'Tulum y Cobá').click();

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { API, mockApi } from './fixtures/mockApi.js';
 import { tours } from './fixtures/data.js';
-import { MB, editCatalog, fileOf } from './fixtures/tourEdit.js';
+import { MB, editCatalog, fileOf, galleryCatalog } from './fixtures/tourEdit.js';
 
 // V4 y V5 a 390 (T-9): filas compactas, hoja de filtros, chips, aviso móvil y barra inferior con Guardar.
 // REQ-3, REQ-13 (390); AC-3, AC-13 (390), AC-UX-12 (áreas de 44x44), AC-UX-13.
@@ -189,7 +189,7 @@ test.describe('V4 Lista de tours a 390 (T-9)', () => {
 
 const save = (page) => page.getByRole('button', { name: /^Guardar|^Guardando/ });
 const bar = (page) => save(page).locator('xpath=..');
-const chooser = (page) => page.getByLabel('Elegir foto', { exact: true });
+const chooser = (page) => page.getByLabel('Elegir fotos', { exact: true });
 
 async function openEdit(page, url = '/tours/1', catalog = editCatalog()) {
   await page.setViewportSize(VIEWPORT);
@@ -200,26 +200,40 @@ async function openEdit(page, url = '/tours/1', catalog = editCatalog()) {
 }
 
 test.describe('V5 Edición de tour a 390 (T-9)', () => {
-  test('E5.3: una columna con foto en miniatura 112x75, "Cambiar foto" de 44, formatos y peso, y el orden foto, visible, datos, textos', async ({ page }) => {
+  test('E5.3: una columna: portada en miniatura 112x75, aviso, visible, datos, fotos (2 columnas, Acciones de 44, sin manija) y textos', async ({ page }) => {
     await openEdit(page);
     expect(await noOverflow(page)).toBe(true);
-    const preview = await page.getByAltText('Vista previa de la foto').boundingBox();
+    const preview = await page.getByAltText('Portada del tour').boundingBox();
     expect(Math.round(preview.width)).toBe(112);
     expect(Math.round(preview.height)).toBe(75);
-    big(await page.getByRole('button', { name: 'Cambiar foto' }).boundingBox());
-    await expect(page.getByText('JPG, PNG, WebP o GIF', { exact: true })).toBeVisible();
-    await expect(page.getByText('Hasta 10 MB')).toBeVisible();
     const y = async (name) => (await page.getByRole('heading', { name, exact: true }).boundingBox()).y;
-    const [foto, general, textos] = [await y('Foto'), await y('Datos generales'), await y('Textos por idioma')];
+    const [portada, general, fotos, textos] = [await y('Portada'), await y('Datos generales'), await y('Fotos del tour'), await y('Textos por idioma')];
     const visible = (await page.getByText('Visible en la web', { exact: true }).boundingBox()).y;
-    expect(foto).toBeLessThan(visible);
+    expect(portada).toBeLessThan(visible);
     expect(visible).toBeLessThan(general);
-    expect(general).toBeLessThan(textos);
+    expect(general).toBeLessThan(fotos);
+    expect(fotos).toBeLessThan(textos);
+    await expect(page.getByTestId('photo-handle')).toHaveCount(0);
+    await expect(page.getByText('La primera es la portada: es la que se ve en la tarjeta de la web. Usa Acciones para cambiar el orden.')).toBeVisible();
+    big(await page.getByRole('button', { name: 'Acciones de la foto 1' }).boundingBox());
+    big(await page.getByRole('button', { name: 'Agregar fotos' }).boundingBox());
     // Volver a la lista queda encima del título, con área de 44.
     const back = await page.getByRole('link', { name: 'Volver a la lista' }).boundingBox();
     expect(back.height).toBeGreaterThanOrEqual(44);
     expect(back.y).toBeLessThan((await page.getByRole('heading', { level: 1 }).boundingBox()).y);
     await expect(page.getByRole('navigation', { name: 'Ruta' })).toBeHidden();
+  });
+
+  test('galería a 390: cuadrícula de 2 columnas y el menú Acciones mueve la foto sin arrastrar', async ({ page }) => {
+    await openEdit(page, '/tours/1', galleryCatalog(5));
+    const tiles = page.locator('[id^="photo-tile-"]');
+    const [a, b, c] = [await tiles.nth(0).boundingBox(), await tiles.nth(1).boundingBox(), await tiles.nth(2).boundingBox()];
+    expect(Math.abs(a.y - b.y)).toBeLessThan(2);
+    expect(c.y).toBeGreaterThan(a.y);
+    await page.getByRole('button', { name: 'Acciones de la foto 3' }).click();
+    await page.getByRole('menuitem', { name: 'Hacer portada' }).click();
+    await expect(page.getByAltText('Portada del tour')).toHaveAttribute('src', /foto-3\.jpg$/);
+    expect(await noOverflow(page)).toBe(true);
   });
 
   test('barra inferior de 88 px fija con "Guardar" de 44 y la línea de estado: Sin cambios, Cambios sin guardar, Guardado hace un momento', async ({ page }) => {
@@ -267,7 +281,7 @@ test.describe('V5 Edición de tour a 390 (T-9)', () => {
     expect(requests.filter((r) => r.method === 'PATCH')).toHaveLength(2);
   });
 
-  test('E5.10: mientras sube, "Guardar" queda deshabilitado con "Esperando la foto" y "Cancelar" mide 44; E5.11: si falla, Reintentar y Elegir otra de 44', async ({ page }) => {
+  test('E5.10: mientras sube, "Guardar" queda deshabilitado con "Esperando las fotos"; E5.11: si falla, Reintentar y Quitar de 44', async ({ page }) => {
     await openEdit(page);
     let release;
     const gate = new Promise((resolve) => (release = resolve));
@@ -279,29 +293,29 @@ test.describe('V5 Edición de tour a 390 (T-9)', () => {
     });
     await chooser(page).setInputFiles(fileOf('nueva.jpg', 'image/jpeg', MB));
     await expect(save(page)).toBeDisabled();
-    await expect(bar(page).getByText('Esperando la foto')).toBeVisible();
-    big(await page.getByRole('button', { name: 'Cancelar' }).boundingBox());
+    await expect(bar(page).getByText('Esperando las fotos')).toBeVisible();
+    await expect(page.getByText(/Subiendo… \d+ %/)).toBeVisible();
     release();
-    const notice = page.getByRole('alert').filter({ hasText: 'No se pudo subir la foto.' });
-    await expect(notice).toContainText('Se conserva la foto anterior.');
+    const notice = page.getByRole('alert').filter({ hasText: 'nueva.jpg' });
+    await expect(notice).toContainText('No se pudo subir.');
     big(await notice.getByRole('button', { name: 'Reintentar' }).boundingBox());
-    big(await notice.getByRole('button', { name: 'Elegir otra' }).boundingBox());
+    big(await notice.getByRole('button', { name: 'Quitar' }).boundingBox());
     expect(await noOverflow(page)).toBe(true);
     fail = false;
     await notice.getByRole('button', { name: 'Reintentar' }).click();
-    await expect(page.getByText('Foto nueva. La web la mostrará cuando guardes.')).toBeVisible();
+    await expect(page.locator('[id^="photo-tile-"]')).toHaveCount(2);
     await expect(save(page)).toBeEnabled();
   });
 
   test('E5.5: con errores, el resumen sale arriba (debajo del título), los enlaces llevan al campo y el foco no queda bajo la barra', async ({ page }) => {
     await openEdit(page);
-    await page.getByLabel('Ubicación').fill('');
+    await page.getByLabel('Duración').fill('abc');
     await save(page).click();
     const summary = page.getByRole('alert').filter({ hasText: 'Revisa 1 campo' });
     await expect(summary).toBeVisible();
-    await expect(page.getByLabel('Ubicación')).toBeFocused();
+    await expect(page.getByLabel('Duración')).toBeFocused();
     const summaryBox = await summary.boundingBox();
-    expect(summaryBox.y).toBeLessThan((await page.getByLabel('Ubicación').boundingBox()).y);
+    expect(summaryBox.y).toBeLessThan((await page.getByLabel('Duración').boundingBox()).y);
     expect(await noOverflow(page)).toBe(true);
   });
 
@@ -309,7 +323,7 @@ test.describe('V5 Edición de tour a 390 (T-9)', () => {
     await openEdit(page, '/tours/new');
     await expect(bar(page).getByText('Sin cambios')).toBeVisible();
     await expect(page.getByRole('switch', { name: 'Visible en la web' })).not.toBeChecked();
-    await expect(page.getByText('Arrastra una foto aquí')).toBeVisible();
+    await expect(page.getByText('Este tour no tiene fotos.')).toBeVisible();
     expect(await noOverflow(page)).toBe(true);
   });
 
@@ -327,12 +341,12 @@ test.describe('V5 Edición de tour a 390 (T-9)', () => {
   test('axe: 0 serious/critical en edición, alta y con errores a 390', async ({ page }) => {
     await openEdit(page);
     expect(await blocking(page)).toEqual([]);
-    await page.getByLabel('Ubicación').fill('');
+    await page.getByLabel('Duración').fill('abc');
     await save(page).click();
     await expect(page.getByRole('alert').filter({ hasText: 'Revisa 1 campo' })).toBeVisible();
     expect(await blocking(page)).toEqual([]);
     await page.goto('/tours/new');
-    await expect(page.getByText('Arrastra una foto aquí')).toBeVisible();
+    await expect(page.getByText('Este tour no tiene fotos.')).toBeVisible();
     expect(await blocking(page)).toEqual([]);
   });
 });

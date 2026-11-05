@@ -16,7 +16,7 @@ import Banner from '../../components/Banner';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import FormField from '../../components/FormField';
 import { ErrorState, NotFound } from '../../components/States';
-import PhotoField from './PhotoField';
+import PhotoGallery, { CoverPreview } from './PhotoGallery';
 
 const ID_RE = /^[1-9]\d*$/;
 
@@ -43,11 +43,20 @@ function initialForm(tour, languages) {
     location: tour?.location ?? '',
     duration: tour ? String(tour.duration ?? '') : '',
     price: tour ? String(tour.price ?? '') : '',
-    img: tour?.img ?? '',
+    images: (tour?.images ?? []).map((i) => i.filename),
     isActive: tour ? !!tour.isActive : false, // un tour nuevo nace oculto (D1)
     translations,
   };
 }
+
+// Mensajes al guardar según el `code` del API (adenda T-1 del brief admin).
+const SAVE_ERRORS = {
+  TOUR_NEEDS_PHOTO: 'No se guardó: para mostrar el tour en la web necesita al menos una foto. Agrega una o apaga "Visible en la web".',
+  TOO_MANY_IMAGES: 'No se guardó: un tour admite como máximo 8 fotos. Elimina las que sobran.',
+  INVALID_IMAGES: 'No se guardó: alguna foto no se subió bien. Quítala y vuelve a subirla.',
+  INVALID_DURATION: 'Escribe la duración en minutos, como número entero de 1 o más, o déjala vacía.',
+};
+const saveErrorMessage = (err) => SAVE_ERRORS[err?.response?.data?.code] ?? errorMessage(err);
 
 const durationMinutes = (value) => (/^\d+$/.test(value.trim()) && Number(value) >= 1 ? Number(value) : null);
 
@@ -57,9 +66,7 @@ function validate(form, languages) {
   const add = (id, label, message, language) => errors.push({ id, label, message, languageId: language?.id });
   if (blank(form.adminTitle)) add('tour-adminTitle', 'Nombre admin', 'Escribe el nombre admin.');
   if (!form.categoryId) add('tour-categoryId', 'Categoría', 'Elige una categoría.');
-  if (blank(form.location)) add('tour-location', 'Ubicación', 'Escribe la ubicación.');
-  if (blank(form.duration)) add('tour-duration', 'Duración', 'Escribe la duración en minutos.');
-  else if (!durationMinutes(form.duration)) add('tour-duration', 'Duración', 'Escribe minutos en número entero, 1 o más.');
+  if (!blank(form.duration) && !durationMinutes(form.duration)) add('tour-duration', 'Duración', SAVE_ERRORS.INVALID_DURATION);
   if (blank(form.price)) add('tour-price', 'Precio', 'Escribe el precio.');
   else if (!(Number(form.price) >= 0)) add('tour-price', 'Precio', 'Escribe un precio de 0 o más.');
   activeLanguages(languages).forEach((l) => {
@@ -151,6 +158,7 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
   const [saveError, setSaveError] = useState(null);
   const [justSaved, setJustSaved] = useState(!!savedFlag);
   const [uploading, setUploading] = useState(false);
+  const [autoOff, setAutoOff] = useState(false); // se apagó "Visible en la web" al quitar la última foto (REQ-21)
   const [focusRequest, setFocusRequest] = useState(null);
   const [createdId, setCreatedId] = useState(null);
 
@@ -194,6 +202,17 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
   const setText = (languageId, field, value) =>
     setForm((f) => ({ ...f, translations: { ...f.translations, [languageId]: { ...f.translations[languageId], [field]: value } } }));
 
+  const addImage = (filename) => {
+    setAutoOff(false);
+    setForm((f) => ({ ...f, images: [...f.images, filename] }));
+  };
+  // Reordenar y quitar. Quitar la última foto de un tour visible lo oculta y lo avisa (REQ-21).
+  const changeImages = (images) => {
+    if (images.length === 0 && form.isActive) setAutoOff(true);
+    else if (images.length > 0) setAutoOff(false);
+    setForm((f) => ({ ...f, images, isActive: images.length > 0 && f.isActive }));
+  };
+
   const goTo = (error) => {
     if (error.languageId) setActiveLang(error.languageId);
     setFocusRequest({ id: error.id });
@@ -207,6 +226,7 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
     onSuccess: (data, { snapshot }) => {
       setBaseline(snapshot);
       setSaveError(null);
+      setAutoOff(false);
       setJustSaved(true);
       queryClient.invalidateQueries({ queryKey: ['tours'] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
@@ -214,7 +234,7 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
       else toasts.success('Cambios guardados');
     },
     onError: (err) => {
-      setSaveError(errorMessage(err));
+      setSaveError(saveErrorMessage(err));
       // Bajo 1200 px el banner puede quedar fuera de la vista: el error y Reintentar también van en un aviso fijo.
       if (stacked) {
         errorToastRef.current = toasts.error(`No pudimos guardar «${title}».`, {
@@ -245,9 +265,9 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
       payload: {
         adminTitle: form.adminTitle,
         price: Number(form.price),
-        location: form.location,
-        duration: durationMinutes(form.duration),
-        img: form.img || null,
+        location: form.location.trim() || null,
+        duration: blank(form.duration) ? null : durationMinutes(form.duration),
+        images: form.images,
         isActive: form.isActive,
         categoryId: Number(form.categoryId),
         translations,
@@ -256,13 +276,15 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
   };
 
   const minutes = durationMinutes(form.duration);
+  // Sin fotos no se puede publicar (REQ-21). Si ya estuviera visible, el interruptor queda libre para poder apagarlo.
+  const noPhotos = form.images.length === 0 && !form.isActive;
 
   useEffect(() => {
     handleSaveRef.current = handleSave;
   });
 
   let railNote = null;
-  if (uploading) railNote = <Typography variant="caption" color="text.secondary">Esperando la foto</Typography>;
+  if (uploading) railNote = <Typography variant="caption" color="text.secondary">Esperando las fotos</Typography>;
   else if (dirty) {
     railNote = (
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -381,22 +403,20 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
             </FormField>
             <FormField
               id="tour-location"
-              label="Ubicación"
-              required
+              label="Ubicación (opcional)"
               value={form.location}
               onChange={(e) => setField('location', e.target.value)}
-              help="Ej.: Cancún, México"
+              help="Solo para uso interno; la web ya no la muestra."
               error={errorOf('tour-location')}
             />
             <FormField
               id="tour-duration"
-              label="Duración"
-              required
+              label="Duración (opcional)"
               suffix="min"
               value={form.duration}
               onChange={(e) => setField('duration', e.target.value)}
               slotProps={{ htmlInput: { inputMode: 'numeric' } }}
-              help={minutes ? `= ${formatDuration(minutes)}` : 'Escribe los minutos. Ej.: 150 = 2 h 30 min'}
+              help={`${minutes ? `= ${formatDuration(minutes)}. ` : ''}Solo para uso interno; la web ya no la muestra.`}
               error={errorOf('tour-duration')}
             />
             <FormField
@@ -416,7 +436,11 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
           </Box>
         </Box>
 
-        <Box component="section" aria-labelledby="texts-title" sx={{ ...card, pb: 4, order: { xs: 5, lg: 0 } }}>
+        <Box component="section" aria-labelledby="photos-title" sx={{ ...card, order: { xs: 5, lg: 0 } }}>
+          <PhotoGallery value={form.images} onChange={changeImages} onAdd={addImage} onUploadingChange={setUploading} />
+        </Box>
+
+        <Box component="section" aria-labelledby="texts-title" sx={{ ...card, pb: 4, order: { xs: 6, lg: 0 } }}>
           <Typography id="texts-title" variant="h2" component="h2" sx={{ mb: 2 }}>Textos por idioma</Typography>
           <Tabs value={activeLang} onChange={(_, v) => setActiveLang(v)} aria-label="Idiomas" sx={{ borderBottom: '1px solid', borderColor: 'border.subtle', mb: 3 }}>
             {languages.map((l) => {
@@ -480,27 +504,48 @@ function TourForm({ tour, categories, languages: unorderedLanguages, savedFlag }
 
       <Box
         component="aside"
-        aria-label="Foto, visibilidad y guardado"
+        aria-label="Portada, visibilidad y guardado"
         sx={{ gridColumn: { lg: 2 }, gridRow: { lg: '2 / span 2' }, position: { lg: 'sticky' }, top: 32, display: { xs: 'contents', lg: 'flex' }, flexDirection: 'column', gap: 2 }}
       >
         <Box component="section" aria-labelledby="photo-title" sx={{ ...card, p: '15px', order: { xs: 2, lg: 0 } }}>
-          <Typography id="photo-title" variant="h2" component="h2" sx={{ mb: 1.5 }}>Foto</Typography>
-          <PhotoField compact={stacked} value={form.img} savedValue={baseline.img} onChange={(url) => setField('img', url)} onUploadingChange={setUploading} />
+          <Typography id="photo-title" variant="h2" component="h2" sx={{ mb: 1.5 }}>Portada</Typography>
+          {stacked ? (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'flex-start' }}>
+              <Box sx={{ width: form.images[0] ? 112 : '100%', flexShrink: 0 }}><CoverPreview filename={form.images[0]} /></Box>
+              <Typography variant="caption" color="text.secondary">Así se ve en la tarjeta</Typography>
+            </Box>
+          ) : (
+            <>
+              <CoverPreview filename={form.images[0]} />
+              <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>Así se ve en la tarjeta</Typography>
+            </>
+          )}
         </Box>
 
-        <Box component="label" htmlFor="tour-isActive" sx={{ ...card, p: '15px', order: { xs: 3, lg: 0 }, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, cursor: 'pointer' }}>
+        <Box
+          component="label"
+          htmlFor="tour-isActive"
+          sx={{ ...card, p: '15px', order: { xs: 3, lg: 0 }, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, cursor: noPhotos ? 'default' : 'pointer' }}
+        >
           <Box>
             <Typography id="active-title" variant="subtitle2" component="span" sx={{ display: 'block', color: 'text.primary', fontSize: 15, fontWeight: 600 }}>Visible en la web</Typography>
             <Typography id="active-help" variant="caption" color="text.secondary" component="span" sx={{ display: 'block' }}>
-              {form.isActive ? 'Los viajeros ven este tour.' : 'Oculto: los viajeros no lo ven.'}
+              {noPhotos ? 'Agrega al menos una foto para mostrar el tour en la web.' : form.isActive ? 'Los viajeros ven este tour.' : 'Oculto: los viajeros no lo ven.'}
             </Typography>
           </Box>
           <Switch
             checked={form.isActive}
+            disabled={noPhotos}
             onChange={(e) => setField('isActive', e.target.checked)}
             slotProps={{ input: { id: 'tour-isActive', role: 'switch', 'aria-labelledby': 'active-title', 'aria-describedby': 'active-help' } }}
           />
         </Box>
+
+        {autoOff && (
+          <Banner severity="warning" sx={{ order: { xs: 3, lg: 0 } }}>
+            Se apagó "Visible en la web" porque el tour ya no tiene fotos.
+          </Banner>
+        )}
 
         {!stacked && (
           <>

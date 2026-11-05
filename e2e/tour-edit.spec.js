@@ -26,7 +26,8 @@ test.describe('V5 Edición de tour (T-8)', () => {
     await expect(page).toHaveURL('/tours/1');
     const [patch] = writes(requests);
     expect(patch).toMatchObject({ method: 'PATCH', path: '/tours/1' });
-    expect(patch.body).toMatchObject({ adminTitle: 'cenotes', duration: 270, price: 1000, categoryId: 1, isActive: true, img: '/uploads/tour-1.jpg' });
+    expect(patch.body).toMatchObject({ adminTitle: 'cenotes', duration: 270, price: 1000, categoryId: 1, isActive: true, location: 'Cancún, México', images: ['tour-1.jpg'] });
+    expect(patch.body).not.toHaveProperty('img');
     expect(patch.body.translations.map((t) => t.languageId)).toEqual([1, 2]);
   });
 
@@ -34,7 +35,7 @@ test.describe('V5 Edición de tour (T-8)', () => {
     const { requests } = await openTour(page, '/tours/new');
     await expect(heading(page, 'Nuevo tour')).toBeVisible();
     await expect(page.getByRole('switch', { name: 'Visible en la web' })).not.toBeChecked();
-    await expect(page.getByText('Oculto: los viajeros no lo ven.')).toBeVisible();
+    await expect(page.getByText('Agrega al menos una foto para mostrar el tour en la web.')).toBeVisible();
     await field(page, 'Nombre admin').fill('nuevo-tour');
     await page.getByRole('combobox', { name: 'Categoría' }).click();
     await page.getByRole('option', { name: 'Islas' }).click();
@@ -52,7 +53,8 @@ test.describe('V5 Edición de tour (T-8)', () => {
     await expect(heading(page, 'Cenotes')).toBeVisible(); // GET /tours/40 de la fixture
     const [post] = writes(requests);
     expect(post).toMatchObject({ method: 'POST', path: '/tours' });
-    expect(post.body).toMatchObject({ adminTitle: 'nuevo-tour', categoryId: 4, duration: 90, price: 1500, isActive: false, img: null });
+    expect(post.body).toMatchObject({ adminTitle: 'nuevo-tour', categoryId: 4, duration: 90, price: 1500, isActive: false, location: 'Cancún, México', images: [] });
+    expect(post.body).not.toHaveProperty('img');
     // El aviso no se repite al recargar.
     await page.reload();
     await expect(heading(page, 'Cenotes')).toBeVisible();
@@ -85,15 +87,15 @@ test.describe('V5 Edición de tour (T-8)', () => {
 
   test('AC-10: el primer error va en orden de lectura; si es de Datos generales la pestaña actual no cambia y la otra queda marcada', async ({ page }) => {
     await openTour(page, '/tours/1');
-    await field(page, 'Ubicación').fill('');
+    await field(page, 'Duración').fill('abc');
     await tab(page, 'English').click();
     await field(page, 'Título (English)').fill('');
     await field(page, 'Descripción (English)').fill('');
     await tab(page, 'Español').click();
     await save(page).click();
     await expect(page.getByRole('alert').filter({ hasText: 'Revisa 3 campos' })).toBeVisible();
-    await expect(field(page, 'Ubicación')).toBeFocused();
-    await expect(page.getByText('Escribe la ubicación.')).toBeVisible();
+    await expect(field(page, 'Duración')).toBeFocused();
+    await expect(page.getByText('Escribe la duración en minutos, como número entero de 1 o más, o déjala vacía.')).toBeVisible();
     await expect(tab(page, 'Español')).toHaveAttribute('aria-selected', 'true');
     await expect(tab(page, 'English')).toContainText('2 errores');
     // Los enlaces del resumen llevan al campo y abren su pestaña.
@@ -102,19 +104,83 @@ test.describe('V5 Edición de tour (T-8)', () => {
     await expect(field(page, 'Descripción (English)')).toBeFocused();
   });
 
-  test('AC-10: nombre admin, categoría, duración y precio inválidos se marcan con texto junto al campo', async ({ page }) => {
+  test('AC-10: nombre admin, categoría, precio y duración inválidos se marcan con texto junto al campo', async ({ page }) => {
     const { requests } = await openTour(page, '/tours/new');
     await save(page).click();
     expect(writes(requests)).toEqual([]);
-    await expect(page.getByRole('alert').filter({ hasText: 'Revisa 9 campos' })).toBeVisible();
-    for (const text of ['Escribe el nombre admin.', 'Elige una categoría.', 'Escribe la ubicación.', 'Escribe la duración en minutos.', 'Escribe el precio.']) {
+    await expect(page.getByRole('alert').filter({ hasText: 'Revisa 7 campos' })).toBeVisible(); // ubicación y duración ya no son obligatorias
+    for (const text of ['Escribe el nombre admin.', 'Elige una categoría.', 'Escribe el precio.']) {
       await expect(page.getByText(text)).toBeVisible();
     }
+    await expect(page.getByText('Escribe la ubicación.')).toHaveCount(0);
     await expect(field(page, 'Nombre admin')).toBeFocused();
     await field(page, 'Duración').fill('0');
-    await expect(page.getByText('Escribe minutos en número entero, 1 o más.')).toBeVisible();
+    await expect(page.getByText('Escribe la duración en minutos, como número entero de 1 o más, o déjala vacía.')).toBeVisible();
     await field(page, 'Precio').fill('-5');
     await expect(page.getByText('Escribe un precio de 0 o más.')).toBeVisible();
+  });
+
+  test('AC-15: ubicación y duración son opcionales: se lee en la etiqueta y en la ayuda, y sin ellas se guarda null', async ({ page }) => {
+    const { requests } = await openTour(page, '/tours/new');
+    await expect(page.getByText('Ubicación (opcional)')).toBeVisible();
+    await expect(page.getByText('Duración (opcional)')).toBeVisible();
+    await expect(page.getByText('Solo para uso interno; la web ya no la muestra.')).toHaveCount(2);
+    await expect(field(page, 'Ubicación')).not.toHaveAttribute('aria-required', 'true');
+    await expect(field(page, 'Duración')).not.toHaveAttribute('aria-required', 'true');
+    await field(page, 'Ubicación').fill('');
+    await field(page, 'Duración').fill('');
+    await field(page, 'Nombre admin').fill('nuevo-tour');
+    await page.getByRole('combobox', { name: 'Categoría' }).click();
+    await page.getByRole('option', { name: 'Islas' }).click();
+    await field(page, 'Precio').fill('1500');
+    await field(page, 'Título (Español)').fill('Nuevo tour');
+    await field(page, 'Descripción (Español)').fill('Una descripción.');
+    await tab(page, 'English').click();
+    await field(page, 'Título (English)').fill('New tour');
+    await field(page, 'Descripción (English)').fill('A description.');
+    await save(page).click();
+    await expect(page).toHaveURL('/tours/40');
+    expect(writes(requests)[0].body).toMatchObject({ location: null, duration: null });
+  });
+
+  test('AC-15: una ubicación de solo espacios se manda como null; con duración escrita se manda el número', async ({ page }) => {
+    const { requests } = await openTour(page, '/tours/1');
+    await field(page, 'Ubicación').fill('   ');
+    await field(page, 'Duración').fill('45');
+    await save(page).click();
+    await expect(page.getByText('Guardado hace un momento')).toBeVisible();
+    expect(writes(requests)[0].body).toMatchObject({ location: null, duration: 45 });
+  });
+
+  test('AC-15: editar solo el nombre conserva la ubicación y la duración que ya tenía el tour', async ({ page }) => {
+    const { requests } = await openTour(page, '/tours/1');
+    await field(page, 'Nombre admin').fill('cenotes-2');
+    await save(page).click();
+    await expect(page.getByText('Guardado hace un momento')).toBeVisible();
+    expect(writes(requests)[0].body).toMatchObject({ adminTitle: 'cenotes-2', location: 'Cancún, México', duration: 150 });
+  });
+
+  test('AC-15: un tour sin ubicación ni duración (null) se abre con los campos vacíos y se guarda igual', async ({ page }) => {
+    const data = editCatalog();
+    Object.assign(data.find((t) => t.id === 1), { location: null, duration: null });
+    const { requests } = await openTour(page, '/tours/1', { tours: data });
+    await expect(field(page, 'Ubicación')).toHaveValue('');
+    await expect(field(page, 'Duración')).toHaveValue('');
+    await field(page, 'Nombre admin').fill('cenotes-2');
+    await save(page).click();
+    await expect(page.getByText('Guardado hace un momento')).toBeVisible();
+    expect(writes(requests)[0].body).toMatchObject({ location: null, duration: null });
+  });
+
+  test('AC-15: una duración "abc", "0" o "1.5" da error junto al campo y no se envía nada', async ({ page }) => {
+    const { requests } = await openTour(page, '/tours/1');
+    for (const bad of ['abc', '0', '1.5']) {
+      await field(page, 'Duración').fill(bad);
+      await save(page).click();
+      await expect(page.getByText('Escribe la duración en minutos, como número entero de 1 o más, o déjala vacía.').first()).toBeVisible();
+      await expect(field(page, 'Duración')).toHaveAttribute('aria-invalid', 'true');
+    }
+    expect(writes(requests)).toEqual([]);
   });
 
   test('AC-11: si guardar falla se ve el motivo con Reintentar y los campos conservan lo escrito', async ({ page }) => {
@@ -145,7 +211,7 @@ test.describe('V5 Edición de tour (T-8)', () => {
   });
 
   test('AC-11 y AC-28: ninguna llamada a alert( ni confirm( en la edición de tour', async () => {
-    for (const file of ['src/pages/tours/TourEdit.jsx', 'src/pages/tours/PhotoField.jsx']) {
+    for (const file of ['src/pages/tours/TourEdit.jsx', 'src/pages/tours/PhotoGallery.jsx']) {
       expect(source(file)).not.toMatch(/\b(alert|confirm)\(/);
     }
   });
@@ -159,7 +225,7 @@ test.describe('V5 Edición de tour (T-8)', () => {
     await expect(page.getByText('7 caracteres')).toBeVisible(); // "Cenotes"
     await expect(page.getByText('26 caracteres')).toBeVisible(); // descripción
     await field(page, 'Duración').fill('');
-    await expect(page.getByText('Escribe los minutos. Ej.: 150 = 2 h 30 min')).toBeVisible();
+    await expect(page.getByText('= 2 h 30 min')).toHaveCount(0);
     await expect(save(page)).toBeInViewport();
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(save(page)).toBeInViewport();
