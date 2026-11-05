@@ -3,11 +3,11 @@ import AxeBuilder from '@axe-core/playwright';
 import { mockApi } from './fixtures/mockApi.js';
 
 test.describe('base: layout, tema y rutas (T-6)', () => {
-  test('Layout a 1440: menú plano de 232 px con 4 destinos, correo y Cerrar sesión', async ({ page }) => {
+  test('Layout a 1440: menú plano de 232 px con 5 destinos, correo y Cerrar sesión', async ({ page }) => {
     await mockApi(page);
     await page.goto('/');
     const nav = page.getByRole('navigation', { name: 'Principal' });
-    await expect(nav.getByRole('link')).toHaveText(['Inicio', 'Tours', 'Categorías', 'Idiomas']);
+    await expect(nav.getByRole('link')).toHaveText(['Inicio', 'Tours', 'Categorías', 'Idiomas', 'Redes sociales']);
     expect((await nav.boundingBox()).width).toBe(232);
     await expect(nav.getByText('admin@tropical-vitamin.com')).toBeVisible();
     await expect(nav.getByRole('button', { name: 'Cerrar sesión' })).toBeVisible();

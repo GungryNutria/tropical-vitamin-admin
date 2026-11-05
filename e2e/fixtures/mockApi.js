@@ -1,4 +1,4 @@
-import { categories, languages, tours, user } from './data.js';
+import { categories, languages, social, tours, user } from './data.js';
 
 export const API = 'http://api.test';
 
@@ -20,7 +20,8 @@ const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBR
  * fn(request) devuelve { status, body } o undefined para dejar la respuesta normal.
  */
 export async function mockApi(page, { authenticated = true, data = {} } = {}) {
-  const { tours: tourData = tours, categories: categoryData = categories, languages: languageData = languages } = data;
+  const { tours: tourData = tours, categories: categoryData = categories, languages: languageData = languages, social: socialData = social } = data;
+  let socialState = { ...socialData };
   const requests = [];
   let override = () => undefined;
 
@@ -49,8 +50,13 @@ export async function mockApi(page, { authenticated = true, data = {} } = {}) {
       if (path === '/tours/all') return json(route, tourData);
       if (path === '/categories') return json(route, categoryData);
       if (path === '/languages') return json(route, languageData);
+      if (path === '/social/admin') return json(route, socialState);
       const tourId = path.match(/^\/tours\/(\d+)$/);
       if (tourId) return json(route, tourData.find((t) => t.id === Number(tourId[1])) ?? null);
+    }
+    if (req.method() === 'PUT' && path === '/social') {
+      socialState = { ...JSON.parse(req.postData() || '{}'), updatedAt: '2026-11-05T12:30:00.000Z' };
+      return json(route, socialState);
     }
     if (req.method() === 'POST' && path === '/upload') return json(route, { url: '/uploads/6f1c2e0a-nueva-foto.jpg' }, 201);
     if (req.method() === 'POST' && path === '/categories') return json(route, { id: 100, ...JSON.parse(req.postData() || '{}') }, 201);

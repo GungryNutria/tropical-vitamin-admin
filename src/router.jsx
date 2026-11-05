@@ -6,6 +6,7 @@ import TourList from './pages/tours/TourList';
 import TourEdit from './pages/tours/TourEdit';
 import LanguageList from './pages/languages/LanguageList';
 import CategoryList from './pages/categories/CategoryList';
+import SocialSettings from './pages/social/SocialSettings';
 import NotFound from './pages/NotFound';
 import Layout from './components/Layout';
 
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
       { path: 'tours/:id', element: <TourEdit /> },
       { path: 'categories', element: <CategoryList /> },
       { path: 'languages', element: <LanguageList /> },
+      { path: 'social', element: <SocialSettings /> },
       { path: '*', element: <NotFound /> },
     ],
   },

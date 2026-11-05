@@ -71,7 +71,7 @@ export default function FormField({ id, label, required, help, error, invalid, c
           sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75, mt: 0.75, color: error ? 'error.main' : 'tertiary' }}
         >
           {error && <ErrorOutline sx={{ fontSize: 16, mt: '1px', flexShrink: 0 }} aria-hidden />}
-          <Typography variant="caption" sx={{ color: 'inherit' }}>
+          <Typography variant="caption" sx={{ color: 'inherit', flex: 1, minWidth: 0 }}>
             {error || help}
           </Typography>
         </Box>
